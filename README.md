@@ -5,7 +5,6 @@ project-name/
 │
 ├── notebooks/
 │   ├── milestone-1.ipynb
-│   ├── milestone-2.ipynb
 │   └── final_notebook.ipynb
 │
 ├── src/
@@ -15,8 +14,6 @@ project-name/
 │
 ├── reports/
 │   ├── milestone-1-report.pdf
-│   ├── milestone-2-report.pdf
-│   └── final-report.pdf
 │
 ├── models/
 │
