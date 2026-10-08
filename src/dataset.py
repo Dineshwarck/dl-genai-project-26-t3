@@ -28,7 +28,8 @@ class SurfaceDefectDataset(Dataset):
         rle = row['mask_rle']
 
         # 2. Construct the full image path and load it with cv2
-        image_path = os.path.join(self.image_dir,image_id)
+        if not image_id.endswith('.jpg'):
+            image_path = os.path.join(self.image_dir,image_id + '.jpg')
         image = cv2.imread(image_path)
 
         # cv2 reads images in BGR format, convert to RGB
