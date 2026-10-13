@@ -1,88 +1,152 @@
+import os
+import albumentations as A
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import DataLoader
-import albumentations as A
-import pandas as pd
+from tqdm import tqdm
 import wandb
 
-# Import Scratch model and dataset
-from src.dataset import SurfaceDefectDataset
+# Import modular components
+from src.dataset import SurfaceDefectDataset, get_stratified_split
+from src.losses import ComboLoss
+from src.metrics import compute_competition_metrics
 from src.model import ScratchUNet
 
+
 def get_augmentations():
-    # 1. Defining Albumentations (We need to resize for the model to fit in memory)
-    # Let's resize to 128x800 for the baseline to keep it fast
-
-    train_transform = A.Compose([
-        A.Resize(height=128, width=800),
-        A.HorizontalFlip(p=0.5)
-    ])
-   
-    return train_transform
-
-def train_baseline():
-    # 2. Initializing Weights & biases for training
-    wandb.init(project="24F2004781-t32026", name="scratch-unet-baseline")
-
-    # 3. Device Agnostic code
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-
-    # 4. Load Data and create DataLoaders
-    train_df = pd.read_csv(r"D:\SurfaceGuard_AI\data\train.csv")  
-
-    # Using the first 1000 rows to test the pipeline quickly
-    train_df = train_df.dropna().head(1000) 
-    
-    dataset = SurfaceDefectDataset(
-        df=train_df,
-        image_dir=r"D:\SurfaceGuard_AI\data\train",
-        transforms=get_augmentations()  
+    train_transform = A.Compose(
+        [A.Resize(height=128, width=800), A.HorizontalFlip(p=0.5)]
     )
+    val_transform = A.Compose([A.Resize(height=128, width=800)])
+    return train_transform, val_transform
+
+def train_model(
+    data_csv=r'D:\SurfaceGuard_AI\data\train.csv',
+    image_dir=r'D:\SurfaceGuard_AI\data\train',
+    epochs=5,
+    batch_size=4,
+    lr=1e-3,
+    sample_limit=None,
+):
+     # 1. Device Agnostic code
+     device = "cuda" if torch.cuda.is_available() else "cpu"
+     print(f"Using device: {device}")
+
+     # 2. Initialize Weights & Biases
+     wandb.init(project='24F2004781-t32026', name='scratch-unet-multilabel')
+
+     # 3. Load Data & Stratified 80/20 split
+     df = pd.read_csv(data_csv)
+     train_df,val_df = get_stratified_split(df,val_size=0.20,random_state=42)
+
+     if sample_limit:
+        train_df = train_df.head(sample_limit)
+        val_df = val_df.head(sample_limit // 4)
     
-    dataloader = DataLoader(
-        dataset,
-        batch_size=4,
-        shuffle=True,
-        num_workers=2
-    )
-    # 5. Initialize Model, Loss, and Optimizer
-    model = ScratchUNet(in_channels=3,out_channels=1).to(device)
+     print(
+        f"Training images: {len(train_df)} | Validation images: {len(val_df)}"
+     )
 
-    # BCEWithLogitsLoss is best for multi-label binary classification
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(params=model.parameters(),lr=0.01)
+     # 4 .DataLoaders
+     train_tf, val_tf = get_augmentations()
+     train_dataset = SurfaceDefectDataset(
+         train_df, image_dir = image_dir, transforms=train_tf
+     )
+     val_dataset = SurfaceDefectDataset(
+         val_df, image_dir = image_dir, transforms=val_tf
+     )
 
-    # 6. The Training Loop (Just 2 epochs for the baseline test)
-    epochs = 2
+     train_loader = DataLoader(
+        train_dataset, batch_size = batch_size, shuffle =True, num_workers=0
+     )
+     val_loader = DataLoader(
+        val_dataset, batch_size = batch_size, shuffle =False, num_workers=0
+     )
 
-    for epoch in range(epochs):
+     # 5. Model (4 Output Channels), ComboLoss & Optimizer
+     model = ScratchUNet(in_channels=3, out_channels=4).to(device)
+     criterion = ComboLoss(bce_weight=1.0,dice_weight=1.0,smooth=1.0)
+     optimizer = torch.optim.Adam(model.parameters(),lr=lr,weight_decay=1e-4)
+
+     os.makedirs('models', exist_ok = True)
+     best_score = -1.0
+
+     # 6. Training & Validation Loop
+     for epoch in range(epochs):
+        # --- Training Phase ----
         model.train()
-        epoch_loss=0
+        train_loss = 0.0
 
-        for images,masks in dataloader:
-            images = images.to(device)
-            masks = masks.to(device)
+        for images, masks in tqdm(train_loader,desc=f"Epoch {epoch+1}/{epochs} [Train]"):
+            images,masks = images.to(device), masks.to(device)
 
-            # Forward Pass
-            predictions = model(images)
-
-            # Calculate loss
-            loss = criterion(predictions,masks)
-
-            # Backward pass and Optimization
             optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs,masks)
             loss.backward()
             optimizer.step()
-            epoch_loss += loss.item()
 
-        avg_loss = epoch_loss/len(dataloader)       
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
-        wandb.log({"train_loss":avg_loss,"epoch":epoch+1})
+            train_loss += loss.item()
+        
+        avg_train_loss = train_loss / len(train_loader)
 
-    print("Baseline Training Complete!")
-    wandb.finish()
+        # --- Validation Phase ----
+        model.eval()
+        val_loss = 0.0
+        all_preds = []
+        all_targets = []
 
-if __name__=="__main__":
-    train_baseline()
+        with torch.no_grad():
+            for images, masks in tqdm(val_loader,desc=f"Epoch {epoch+1}/{epochs} [Val]"):
+                images, masks = images.to(device), masks.to(device)
+                outputs = model(images)
+                loss = criterion(outputs, masks)
+                val_loss += loss.item()
+
+                all_preds.append(outputs.cpu())
+                all_targets.append(masks.cpu())
+        
+        avg_val_loss = val_loss / len(val_loader)   
+
+
+        # --- OFFICIAL METRIC EVALUATION ---
+        all_preds_tensor = torch.cat(all_preds, dim=0)
+        all_targets_tensor = torch.cat(all_targets, dim=0)
+        metrics = compute_competition_metrics(all_preds_tensor, all_targets_tensor,threshold=0.5)
+
+        # --- LOGGING ---
+        print(
+            f"Epoch {epoch+1}/{epochs} |"
+            f" Train Loss: {avg_train_loss:.4f} |"
+            f" Val Loss: {avg_val_loss:.4f} |"
+            f" F1-score: {metrics['foreground_dice']:.4f} |"
+            f" FP Score: {metrics['false_positive_score']:.4f} |"
+            f" Empty Accuracy: {metrics['empty_accuracy']:.4f} |"
+            f" Official Score: {metrics['official_score']:.4f}"
+        )
+        wandb.log({
+                'epoch': epoch + 1,
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
+                'foreground_dice': metrics['foreground_dice'],
+                'false_positive_score': metrics['false_positive_score'],
+                'empty_accuracy': metrics['empty_accuracy'],
+                'official_score': metrics['official_score'],
+            })
+        
+        # --- CHECKPOINT SAVING ---
+        if metrics['official_score'] > best_score:
+            best_score = metrics['official_score']
+            torch.save(
+                model.state_dict(),
+                f"models/best_scratch_unet.pth"
+            )
+            print(f'Saved new best model checkpoint! Score: {best_score:.4f}\n')
+    
+     print('Training Complete!')
+     wandb.finish()
+    
+if __name__ == '__main__':
+    train_model()        
