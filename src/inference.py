@@ -8,6 +8,31 @@ from tqdm import tqdm
 from src.model import ScratchUNet
 from src.metrics import post_process_mask
 from src.utils import mask_to_rle
+import wandb
+
+def fetch_model_from_wandb(
+    project='24F2004781-t32026',
+    artifact_name='scratch-unet-best:latest',
+    target_dir='models'
+):
+    """
+    Downloads the best model checkpoint from Weights & Biases Artifacts.
+    Returns the path to the downloaded .pth file.
+    """
+    print(f"📦 Fetching artifact '{artifact_name}' from W&B project '{project}'...")
+    api = wandb.Api()
+    
+    # Resolves and downloads the artifact to target_dir
+    artifact = api.artifact(f"{project}/{artifact_name}", type='model')
+    download_dir = artifact.download(root=target_dir)
+    
+    checkpoint_path = os.path.join(download_dir, 'best_scratch_unet.pth')
+    print(f"✅ Successfully downloaded best model to: {checkpoint_path}")
+    return checkpoint_path
+
+
+
+
 DEFECT_CLASSES = ['defect_a', 'defect_b', 'defect_c', 'defect_d']
 
 class TestDefectDataset(Dataset):
@@ -33,32 +58,49 @@ class TestDefectDataset(Dataset):
 def generate_submission(
     sample_sub_csv='data/sample_submission.csv',
     test_image_dir='data/test',
-    checkpoint_path='models/best_scratch_unet.pth',
+    checkpoint_path=None,
+    wandb_artifact = 'scratch-unet-best:latest',
     output_csv='submission.csv',
     threshold=0.5,
     batch_size=8,
+    sample_limit=None,
     device=None,
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running inference on device: {device}")
 
-    # 1. Load Submission Template
+    # --- 1. Resolve Checkpoint from W&B or Local ---
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        print(f"Using local checkpoint: {checkpoint_path}")
+    elif wandb_artifact:
+        checkpoint_path = fetch_model_from_wandb(artifact_name=wandb_artifact)
+    else:
+        checkpoint_path = fetch_model_from_wandb(artifact_name='scratch-unet-best:latest')
+
+    # 2. Load Submission Template
     sub_df = pd.read_csv(sample_sub_csv)
     unique_image_ids = sub_df['image_id'].unique()
     print(f"Total test images to predict: {len(unique_image_ids)}")
 
-    # 2. Setup Test DataLoader
-    test_dataset = TestDefectDataset(unique_image_ids, test_image_dir)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
+    # Apply fast testing sample limit if specified
+    if sample_limit is not None:
+        unique_image_ids = unique_image_ids[:sample_limit]
+        sub_df = sub_df[sub_df['image_id'].isin(unique_image_ids)].copy()
+        print(f"Limited to {sample_limit} images for fast testing")
 
-    # 3. Load Trained Model
+    # 3. Setup Test DataLoader
+    num_workers = 0 if os.name == 'nt' else 2
+    test_dataset = TestDefectDataset(unique_image_ids, test_image_dir)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    # 4. Load Trained Model
     model = ScratchUNet(in_channels=3, out_channels=4).to(device)
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
     print(f"Loaded weights from {checkpoint_path}")
 
-    # 4. Predict & Post-process
+    # 5. Predict & Post-process
     predictions = {}  # Map (image_id, defect_type) -> rle_string
 
     with torch.no_grad():
@@ -80,13 +122,13 @@ def generate_submission(
                         rle_str = " "
                     predictions[(img_id, defect_name)] = rle_str
 
-    # 5. Populate Template
+    # 6. Populate Template
     sub_df['mask_rle'] = sub_df.apply(
         lambda row: predictions.get((row['image_id'], row['defect_type']), " "),
         axis=1
     )
 
-    # 6. Save & Summary
+    # 7. Save & Summary
     sub_df.to_csv(output_csv, index=False)
     print(f"\n✅ Submission successfully saved to: {output_csv}")
 
