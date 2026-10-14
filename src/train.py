@@ -1,3 +1,4 @@
+import gc
 import os
 import albumentations as A
 import numpy as np
@@ -69,6 +70,9 @@ def train_model(
      model = ScratchUNet(in_channels=3, out_channels=4).to(device)
      criterion = ComboLoss(bce_weight=1.0,dice_weight=1.0,smooth=1.0)
      optimizer = torch.optim.Adam(model.parameters(),lr=lr,weight_decay=1e-4)
+     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+         optimizer, T_max=epochs, eta_min=1e-6
+     )
 
      os.makedirs('models', exist_ok = True)
      best_score = -1.0
@@ -128,6 +132,7 @@ def train_model(
         )
         wandb.log({
                 'epoch': epoch + 1,
+                'lr': optimizer.param_groups[0]['lr'],
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
                 'foreground_dice': metrics['foreground_dice'],
@@ -139,11 +144,34 @@ def train_model(
         # --- CHECKPOINT SAVING ---
         if metrics['official_score'] > best_score:
             best_score = metrics['official_score']
+            checkpoint_path = "models/best_scratch_unet.pth"
             torch.save(
                 model.state_dict(),
-                f"models/best_scratch_unet.pth"
+                checkpoint_path
             )
             print(f'Saved new best model checkpoint! Score: {best_score:.4f}\n')
+
+            # Stream model directly to W&B cloud storage
+            artifact = wandb.Artifact(
+                name='scratch-unet-best',
+                type='model',
+                description=f'Best Scratch UNet at epoch {epoch+1} with score {best_score:.4f}',
+                metadata={
+                    'epoch': epoch + 1,
+                    'val_loss': avg_val_loss,
+                    'foreground_dice': metrics['foreground_dice'],
+                    'false_positive_score': metrics['false_positive_score'],
+                    'empty_accuracy': metrics['empty_accuracy'],
+                    'official_score': metrics['official_score'],
+                }
+            )
+            artifact.add_file(checkpoint_path)
+            wandb.log_artifact(artifact)
+
+        # --- STEP SCHEDULER & FREE MEMORY ---
+        scheduler.step()
+        del all_preds, all_targets, all_preds_tensor, all_targets_tensor
+        gc.collect()
     
      print('Training Complete!')
      wandb.finish()
