@@ -100,6 +100,16 @@ def generate_submission(
     model.eval()
     print(f"Loaded weights from {checkpoint_path}")
 
+    # Setup per-channel threshold tensor
+    if isinstance(threshold, (int, float)):
+        th_tensor = torch.full((1, 4, 1, 1), float(threshold), device=device)
+    elif isinstance(threshold, dict):
+        th_tensor = torch.tensor([threshold.get(i, 0.5) for i in range(4)], device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    elif isinstance(threshold, (list, tuple)):
+        th_tensor = torch.tensor(threshold, device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    else:
+        th_tensor = torch.full((1, 4, 1, 1), 0.5, device=device)
+
     # 5. Predict & Post-process
     predictions = {}  # Map (image_id, defect_type) -> rle_string
 
@@ -108,7 +118,7 @@ def generate_submission(
             images = images.to(device)
             logits = model(images)
             probs = torch.sigmoid(logits)
-            preds_bin = (probs > threshold).cpu().numpy().astype(np.uint8)  # (B, 4, 128, 800)
+            preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)  # (B, 4, 128, 800)
 
             for i, img_id in enumerate(img_ids):
                 # Clean small noise blobs below area thresholds
