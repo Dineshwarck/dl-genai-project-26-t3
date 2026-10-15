@@ -19,7 +19,7 @@ def fetch_model_from_wandb(
     Downloads the best model checkpoint from Weights & Biases Artifacts.
     Returns the path to the downloaded .pth file.
     """
-    print(f"📦 Fetching artifact '{artifact_name}' from W&B project '{project}'...")
+    print(f"[W&B] Fetching artifact '{artifact_name}' from W&B project '{project}'...")
     api = wandb.Api()
     
     # Resolves and downloads the artifact to target_dir
@@ -27,7 +27,7 @@ def fetch_model_from_wandb(
     download_dir = artifact.download(root=target_dir)
     
     checkpoint_path = os.path.join(download_dir, 'best_scratch_unet.pth')
-    print(f"✅ Successfully downloaded best model to: {checkpoint_path}")
+    print(f"[OK] Successfully downloaded best model to: {checkpoint_path}")
     return checkpoint_path
 
 
@@ -140,7 +140,7 @@ def generate_submission(
 
     # 7. Save & Summary
     sub_df.to_csv(output_csv, index=False)
-    print(f"\n✅ Submission successfully saved to: {output_csv}")
+    print(f"\n[OK] Submission successfully saved to: {output_csv}")
 
     # Quick Sanity Check
     non_empty_count = (sub_df['mask_rle'].str.strip() != "").sum()
