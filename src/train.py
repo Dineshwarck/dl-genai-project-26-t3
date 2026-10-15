@@ -1,3 +1,4 @@
+import cv2
 import gc
 import os
 import albumentations as A
@@ -17,30 +18,49 @@ from src.model import ScratchUNet
 
 
 def get_augmentations():
-    train_transform = A.Compose(
-        [A.Resize(height=128, width=800), A.HorizontalFlip(p=0.5)]
-    )
+    train_transform = A.Compose([
+        A.Resize(height=128, width=800),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.Affine(
+            scale=(0.9, 1.1),
+            translate_percent=(-0.05, 0.05),
+            rotate=(-15, 15),
+            border_mode=cv2.BORDER_REFLECT,
+            p=0.5,
+        ),
+        A.RandomBrightnessContrast(
+            brightness_limit=0.2, contrast_limit=0.2, p=0.5
+        ),
+        A.GaussNoise(std_range=(0.05, 0.2), p=0.3),
+    ])
     val_transform = A.Compose([A.Resize(height=128, width=800)])
     return train_transform, val_transform
 
 def train_model(
     data_csv=r'D:\SurfaceGuard_AI\data\train.csv',
     image_dir=r'D:\SurfaceGuard_AI\data\train',
-    epochs=5,
-    batch_size=4,
-    lr=1e-3,
+    epochs=15,
+    batch_size=8,
+    lr=3e-4,
+    pos_weight=(12.0, 25.0, 3.0, 6.0),
+    channel_weights=(1.5, 2.5, 1.0, 1.2),
     sample_limit=None,
+    num_workers=None,
 ):
      # 1. Device Agnostic code
      device = "cuda" if torch.cuda.is_available() else "cpu"
      print(f"Using device: {device}")
+
+     if num_workers is None:
+         num_workers = 2 if (torch.cuda.is_available() and os.name != 'nt') else 0
 
      # 2. Initialize Weights & Biases
      wandb.init(project='24F2004781-t32026', name='scratch-unet-multilabel')
 
      # 3. Load Data & Stratified 80/20 split
      df = pd.read_csv(data_csv)
-     train_df,val_df = get_stratified_split(df,val_size=0.20,random_state=42)
+     train_df, val_df = get_stratified_split(df, val_size=0.20, random_state=42)
 
      if sample_limit:
         train_df = train_df.head(sample_limit)
@@ -50,31 +70,37 @@ def train_model(
         f"Training images: {len(train_df)} | Validation images: {len(val_df)}"
      )
 
-     # 4 .DataLoaders
+     # 4. DataLoaders
      train_tf, val_tf = get_augmentations()
      train_dataset = SurfaceDefectDataset(
-         train_df, image_dir = image_dir, transforms=train_tf
+         train_df, image_dir=image_dir, transforms=train_tf
      )
      val_dataset = SurfaceDefectDataset(
-         val_df, image_dir = image_dir, transforms=val_tf
+         val_df, image_dir=image_dir, transforms=val_tf
      )
 
      train_loader = DataLoader(
-        train_dataset, batch_size = batch_size, shuffle =True, num_workers=0
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
      )
      val_loader = DataLoader(
-        val_dataset, batch_size = batch_size, shuffle =False, num_workers=0
+        val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
      )
 
      # 5. Model (4 Output Channels), ComboLoss & Optimizer
-     model = ScratchUNet(in_channels=3, out_channels=4).to(device)
-     criterion = ComboLoss(bce_weight=1.0,dice_weight=1.0,smooth=1.0)
-     optimizer = torch.optim.Adam(model.parameters(),lr=lr,weight_decay=1e-4)
+     model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3).to(device)
+     criterion = ComboLoss(
+         bce_weight=1.0,
+         dice_weight=1.0,
+         smooth=1.0,
+         pos_weight=pos_weight,
+         channel_weights=channel_weights,
+     )
+     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
      scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
          optimizer, T_max=epochs, eta_min=1e-6
      )
 
-     os.makedirs('models', exist_ok = True)
+     os.makedirs('models', exist_ok=True)
      best_score = -1.0
 
      # 6. Training & Validation Loop
@@ -83,13 +109,14 @@ def train_model(
         model.train()
         train_loss = 0.0
 
-        for images, masks in tqdm(train_loader,desc=f"Epoch {epoch+1}/{epochs} [Train]"):
-            images,masks = images.to(device), masks.to(device)
+        for images, masks in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]"):
+            images, masks = images.to(device), masks.to(device)
 
             optimizer.zero_grad()
             outputs = model(images)
-            loss = criterion(outputs,masks)
+            loss = criterion(outputs, masks)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             train_loss += loss.item()
