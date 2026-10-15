@@ -22,60 +22,78 @@ class DoubleConv(nn.Module):
     
 
 class ScratchUNet(nn.Module):
-    def __init__(self,in_channels=3,out_channels=4):
+    def __init__(self, in_channels=3, out_channels=4, dropout_rate=0.3):
         super().__init__()
 
         # --- Encoder (Downsampling) ---
-        self.enc1 = DoubleConv(in_channels,64)  
-        self.pool1 = nn.MaxPool2d(kernel_size=2,stride=2)
+        self.enc1 = DoubleConv(in_channels, 64)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.enc2 = DoubleConv(64,128)
-        self.pool2 = nn.MaxPool2d(kernel_size=2,stride=2)
+        self.enc2 = DoubleConv(64, 128)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # --- Bottleneck (Deepest Layer) ---
-        self.bottleneck = DoubleConv(128,256)
+        self.enc3 = DoubleConv(128, 256)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.enc4 = DoubleConv(256, 512)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # --- Bottleneck (Deepest Layer) & Regularization ---
+        self.bottleneck = DoubleConv(512, 1024)
+        self.dropout = nn.Dropout2d(p=dropout_rate) if dropout_rate > 0 else nn.Identity()
 
         # --- Decoder (Upsampling) ---
-        # ConvTranspose2d doubles the height and width, but halves the channels
+        self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.dec4 = DoubleConv(1024, 512)
 
-        self.upconv2 = nn.ConvTranspose2d(256,128,kernel_size=2,stride=2)
-        # After upsampling, we concatenate with the encoder features (128 + 128 = 256)
-        self.dec2 = DoubleConv(256,128)
+        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.dec3 = DoubleConv(512, 256)
 
-        self.upconv1 = nn.ConvTranspose2d(128,64,kernel_size=2,stride=2)
+        self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.dec2 = DoubleConv(256, 128)
 
-        # Concatenate again (64+64 = 128)
-        self.dec1 = DoubleConv(128,64)
+        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.dec1 = DoubleConv(128, 64)
 
         # --- FINAL LAYER ---
-        # 1x1 Convolution to map 64 features to our 4 defects classes
-        self.final_conv = nn.Conv2d(64,out_channels,kernel_size=1)
+        # 1x1 Convolution to map 64 features to out_channels (e.g. 4 defect classes)
+        self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
-    def forward(self,x):
-        # 1. Pass through Encoder 1
+    def forward(self, x):
+        # 1. Encoder stages
         e1 = self.enc1(x)
         p1 = self.pool1(e1)
 
-        # 2. Pass through Encoder 2
         e2 = self.enc2(p1)
-        p2 = self.pool2(e2) 
+        p2 = self.pool2(e2)
 
-        # 3. Pass through Bottleneck
-        b = self.bottleneck(p2)
+        e3 = self.enc3(p2)
+        p3 = self.pool3(e3)
 
-        # 4. Decoder 2: Upsample bottleneck, concatenate with e2, and pass through dec2
+        e4 = self.enc4(p3)
+        p4 = self.pool4(e4)
 
-        d2 = self.upconv2(b)
-        # Concatenation: PyTorch tensor concatenation along the channel dimension (dim=1)
-        d2_cat = torch.cat((d2,e2),dim=1)
+        # 2. Bottleneck with Dropout
+        b = self.bottleneck(p4)
+        b = self.dropout(b)
+
+        # 3. Decoder stages with skip connections
+        d4 = self.upconv4(b)
+        d4_cat = torch.cat((d4, e4), dim=1)
+        d4_out = self.dec4(d4_cat)
+
+        d3 = self.upconv3(d4_out)
+        d3_cat = torch.cat((d3, e3), dim=1)
+        d3_out = self.dec3(d3_cat)
+
+        d2 = self.upconv2(d3_out)
+        d2_cat = torch.cat((d2, e2), dim=1)
         d2_out = self.dec2(d2_cat)
- 
-        # 5. Decoder 1: Upsample d2_out, concatenate with e1, and pass through dec1
+
         d1 = self.upconv1(d2_out)
-        d1_cat = torch.cat((d1,e1),dim=1)
+        d1_cat = torch.cat((d1, e1), dim=1)
         d1_out = self.dec1(d1_cat)
 
-        # 6. Final Convolution
+        # 4. Final 1x1 convolution
         out = self.final_conv(d1_out)
-
         return out
