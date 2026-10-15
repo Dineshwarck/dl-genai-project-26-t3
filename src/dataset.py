@@ -111,3 +111,67 @@ def get_stratified_split(df, val_size=0.20, random_state=42):
     val_df = val_df.drop(columns=['strat_signature'], errors='ignore').reset_index(drop=True)
 
     return train_df, val_df
+
+
+def get_defect_aware_sampler(
+    df,
+    clean_weight=0.2,
+    a_weight=4.0,
+    b_weight=12.0,
+    c_weight=1.2,
+    d_weight=1.5,
+    num_samples=None,
+):
+    """
+    Creates a PyTorch WeightedRandomSampler that balances defect representation in training batches.
+    Oversamples rare defects (defect_b: 12x, defect_a: 4x) and downsamples clean steel (0.2x).
+    Guarantees that every training batch contains rare defects so gradients are not drowned out.
+
+    Args:
+        df: DataFrame in either raw or pivoted format.
+        clean_weight: Sampling weight for images with zero defects (default 0.2).
+        a_weight: Sampling weight for images with defect_a (tiny pits, default 4.0).
+        b_weight: Sampling weight for images with defect_b (rare scratches, default 12.0).
+        c_weight: Sampling weight for images with defect_c (crazing, default 1.2).
+        d_weight: Sampling weight for images with defect_d (patches, default 1.5).
+        num_samples: Total samples per epoch (defaults to len(df)).
+
+    Returns:
+        WeightedRandomSampler to pass into DataLoader(..., sampler=sampler)
+    """
+    if 'defect_type' in df.columns:
+        pivoted = df.pivot(
+            index='image_id', columns='defect_type', values='mask_rle'
+        ).reset_index()
+    else:
+        pivoted = df.copy()
+
+    weights = np.full(len(pivoted), clean_weight, dtype=np.float32)
+
+    for idx in range(len(pivoted)):
+        row = pivoted.iloc[idx]
+        has_a = pd.notna(row.get('defect_a')) and str(row.get('defect_a')).strip() != ''
+        has_b = pd.notna(row.get('defect_b')) and str(row.get('defect_b')).strip() != ''
+        has_c = pd.notna(row.get('defect_c')) and str(row.get('defect_c')).strip() != ''
+        has_d = pd.notna(row.get('defect_d')) and str(row.get('defect_d')).strip() != ''
+
+        w = clean_weight
+        if has_c:
+            w = max(w, c_weight)
+        if has_d:
+            w = max(w, d_weight)
+        if has_a:
+            w = max(w, a_weight)
+        if has_b:
+            w = max(w, b_weight)
+        weights[idx] = w
+
+    if num_samples is None:
+        num_samples = len(pivoted)
+
+    sampler = torch.utils.data.WeightedRandomSampler(
+        weights=torch.tensor(weights, dtype=torch.double),
+        num_samples=num_samples,
+        replacement=True,
+    )
+    return sampler

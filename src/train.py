@@ -11,7 +11,7 @@ from tqdm import tqdm
 import wandb
 
 # Import modular components
-from src.dataset import SurfaceDefectDataset, get_stratified_split
+from src.dataset import SurfaceDefectDataset, get_stratified_split, get_defect_aware_sampler
 from src.losses import ComboLoss
 from src.metrics import compute_competition_metrics
 from src.model import ScratchUNet
@@ -43,6 +43,10 @@ def train_model(
     epochs=15,
     batch_size=8,
     lr=3e-4,
+    use_sampler=True,
+    use_focal=True,
+    focal_gamma=2.0,
+    focal_alpha=(0.75, 0.85, 0.50, 0.60),
     pos_weight=(12.0, 25.0, 3.0, 6.0),
     channel_weights=(1.5, 2.5, 1.0, 1.2),
     sample_limit=None,
@@ -70,7 +74,7 @@ def train_model(
         f"Training images: {len(train_df)} | Validation images: {len(val_df)}"
      )
 
-     # 4. DataLoaders
+     # 4. DataLoaders (with Defect-Aware Weighted Sampling)
      train_tf, val_tf = get_augmentations()
      train_dataset = SurfaceDefectDataset(
          train_df, image_dir=image_dir, transforms=train_tf
@@ -79,19 +83,30 @@ def train_model(
          val_df, image_dir=image_dir, transforms=val_tf
      )
 
-     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
-     )
+     if use_sampler and sample_limit is None:
+         train_sampler = get_defect_aware_sampler(train_df)
+         train_loader = DataLoader(
+            train_dataset, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers
+         )
+         print("Using Defect-Aware Balanced Sampler (oversampling defect_b and defect_a)")
+     else:
+         train_loader = DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+         )
+
      val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
      )
 
-     # 5. Model (4 Output Channels), ComboLoss & Optimizer
+     # 5. Model (4 Output Channels), Focal+Dice ComboLoss & Optimizer
      model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3).to(device)
      criterion = ComboLoss(
          bce_weight=1.0,
          dice_weight=1.0,
          smooth=1.0,
+         use_focal=use_focal,
+         gamma=focal_gamma,
+         alpha=focal_alpha,
          pos_weight=pos_weight,
          channel_weights=channel_weights,
      )
