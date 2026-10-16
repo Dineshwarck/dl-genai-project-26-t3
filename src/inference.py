@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from src.model import ScratchUNet
-from src.metrics import post_process_mask
+from src.metrics import post_process_mask, CLASS_THRESHOLDS, MIN_AREAS
 from src.utils import mask_to_rle
 import wandb
 
@@ -59,9 +59,10 @@ def generate_submission(
     sample_sub_csv='data/sample_submission.csv',
     test_image_dir='data/test',
     checkpoint_path=None,
-    wandb_artifact = 'scratch-unet-best:latest',
+    wandb_artifact='scratch-unet-best:latest',
     output_csv='submission.csv',
-    threshold=0.5,
+    threshold=CLASS_THRESHOLDS,
+    min_areas=MIN_AREAS,
     batch_size=8,
     sample_limit=None,
     device=None,
@@ -122,7 +123,7 @@ def generate_submission(
 
             for i, img_id in enumerate(img_ids):
                 # Clean small noise blobs below area thresholds
-                cleaned_mask_4ch = post_process_mask(preds_bin[i])
+                cleaned_mask_4ch = post_process_mask(preds_bin[i], min_areas=min_areas)
 
                 for c, defect_name in enumerate(DEFECT_CLASSES):
                     channel_mask = cleaned_mask_4ch[c]

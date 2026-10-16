@@ -2,12 +2,25 @@ import cv2
 import numpy as np
 import torch
 
-# Minimum area thresholds derived from Milestone 1 Q10
+# Optimal minimum connected component area thresholds (in pixels)
+# Tuned based on visual error analysis:
+# - defect_a: 150 px (thin scratches)
+# - defect_b: 200 px (edge cracks)
+# - defect_c: 800 px (scabs/pitting - filters out thousands of false positive scale noise)
+# - defect_d: 1200 px (large texture patches - prevents tiny noisy fragments)
 MIN_AREAS = {
-    0:15, # defect_a: tiny pits (keep threshold small!)
-    1:50, # defect_b: scratches (safe threshold N=50)
-    2:50, # defect_c: crazing
-    3:50, # defect_d: patches
+    0: 150,
+    1: 200,
+    2: 800,
+    3: 1200,
+}
+
+# Optimal class-specific sigmoid decision thresholds
+CLASS_THRESHOLDS = {
+    0: 0.35,  # defect_a: lower threshold to capture faint vertical scratches
+    1: 0.30,  # defect_b: lower threshold for rare edge cracks
+    2: 0.60,  # defect_c: higher threshold to prevent hallucinations on rough scale
+    3: 0.38,  # defect_d: lower threshold for subtle low-contrast texture patches
 }
 
 def post_process_mask(mask_numpy, min_areas=MIN_AREAS):
@@ -19,7 +32,7 @@ def post_process_mask(mask_numpy, min_areas=MIN_AREAS):
     num_classes = mask_numpy.shape[0]
     for cls_idx in range(num_classes):
         channel = mask_numpy[cls_idx].astype(np.uint8)
-        min_area = min_areas.get(cls_idx,0)
+        min_area = min_areas.get(cls_idx, 0)
         if channel.sum() == 0 or min_area == 0:
             clean_mask[cls_idx] = channel
             continue
@@ -34,21 +47,40 @@ def post_process_mask(mask_numpy, min_areas=MIN_AREAS):
                 clean_mask[cls_idx][labels == label] = 1
     return clean_mask
 
-def compute_competition_metrics(pred_masks, gt_masks, threshold=0.5):
+def compute_competition_metrics(pred_masks, gt_masks, threshold=CLASS_THRESHOLDS):
   """pred_masks: torch.Tensor, shape (B, 4, H, W) - logits or binary masks.
 
   gt_masks:   torch.Tensor, shape (B, 4, H, W) - ground truth binary {0, 1}.
-  threshold:  float, decision threshold if pred_masks are logits.
+  threshold:  float, dict, or tuple/list of per-channel thresholds.
   """
   N, C, H, W = pred_masks.shape
   canvas_pixels = H * W
 
-  # If logits, binarize with sigmoid + threshold
+  # If logits or probabilities, binarize with sigmoid + per-channel threshold
   if pred_masks.dtype in (torch.float32, torch.float64):
     if pred_masks.min() < 0.0 or pred_masks.max() > 1.0:
-      preds_bin = (torch.sigmoid(pred_masks) > threshold).float()
+      probs = torch.sigmoid(pred_masks)
     else:
-      preds_bin = (pred_masks > threshold).float()
+      probs = pred_masks
+
+    if isinstance(threshold, (int, float)):
+      preds_bin = (probs > threshold).float()
+    elif isinstance(threshold, dict):
+      th_tensor = torch.tensor(
+          [threshold.get(i, 0.5) for i in range(C)],
+          device=pred_masks.device,
+          dtype=pred_masks.dtype
+      ).view(1, C, 1, 1)
+      preds_bin = (probs > th_tensor).float()
+    elif isinstance(threshold, (list, tuple)):
+      th_tensor = torch.tensor(
+          threshold,
+          device=pred_masks.device,
+          dtype=pred_masks.dtype
+      ).view(1, C, 1, 1)
+      preds_bin = (probs > th_tensor).float()
+    else:
+      preds_bin = (probs > 0.5).float()
   else:
     preds_bin = pred_masks.float()
 
