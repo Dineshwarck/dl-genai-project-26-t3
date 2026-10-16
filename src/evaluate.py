@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from src.dataset import SurfaceDefectDataset, get_stratified_split, DEFECT_CLASSES
 from src.model import ScratchUNet
-from src.metrics import post_process_mask, compute_competition_metrics
+from src.metrics import post_process_mask, compute_competition_metrics, CLASS_THRESHOLDS, MIN_AREAS
 from src.utils import mask_to_rle, rle_to_mask
 from src.inference import fetch_model_from_wandb
 
@@ -23,7 +23,8 @@ def evaluate_validation_set(
     val_size=0.20,
     random_state=42,
     batch_size=8,
-    threshold=0.5,
+    threshold=CLASS_THRESHOLDS,
+    min_areas=MIN_AREAS,
     sample_limit=None,
     device=None,
 ):
@@ -118,7 +119,7 @@ def evaluate_validation_set(
                 image_id = str(row['image_id'])
                 img_counter += 1
 
-                cleaned_mask_4ch = post_process_mask(preds_bin[b])
+                cleaned_mask_4ch = post_process_mask(preds_bin[b], min_areas=min_areas)
 
                 for c, defect_name in enumerate(DEFECT_CLASSES):
                     gt_ch = masks_np[b, c]

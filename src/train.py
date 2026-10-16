@@ -13,7 +13,7 @@ import wandb
 # Import modular components
 from src.dataset import SurfaceDefectDataset, get_stratified_split, get_defect_aware_sampler
 from src.losses import ComboLoss
-from src.metrics import compute_competition_metrics
+from src.metrics import compute_competition_metrics, CLASS_THRESHOLDS
 from src.model import ScratchUNet
 
 
@@ -32,7 +32,8 @@ def get_augmentations():
         A.RandomBrightnessContrast(
             brightness_limit=0.2, contrast_limit=0.2, p=0.5
         ),
-        A.GaussNoise(std_range=(0.05, 0.2), p=0.3),
+        A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=0.5),
+        A.GaussNoise(std_range=(0.01, 0.04), p=0.2),
     ])
     val_transform = A.Compose([A.Resize(height=128, width=800)])
     return train_transform, val_transform
@@ -160,7 +161,7 @@ def train_model(
         # --- OFFICIAL METRIC EVALUATION ---
         all_preds_tensor = torch.cat(all_preds, dim=0)
         all_targets_tensor = torch.cat(all_targets, dim=0)
-        metrics = compute_competition_metrics(all_preds_tensor, all_targets_tensor,threshold=0.5)
+        metrics = compute_competition_metrics(all_preds_tensor, all_targets_tensor, threshold=CLASS_THRESHOLDS)
 
         # --- LOGGING ---
         print(
