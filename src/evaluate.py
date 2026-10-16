@@ -295,3 +295,82 @@ def visualize_defect_comparison(
         plt.close()
     else:
         plt.show()
+
+
+def plot_class_error_gallery(
+    val_predictions_csv_or_df,
+    image_dir,
+    classes=DEFECT_CLASSES,
+    samples_per_category=1,
+    save_dir=None,
+):
+    """
+    Plots a diagnostic visual gallery of wrong predictions for every defect class:
+    1. Worst False Negatives (Missed defects with largest ground truth area)
+    2. Worst False Positives (Hallucinations on clean steel with largest predicted area)
+
+    Args:
+        val_predictions_csv_or_df: Path to val_predictions.csv or loaded DataFrame.
+        image_dir: Path to directory containing raw images.
+        classes: List of defect class names to inspect.
+        samples_per_category: Number of worst samples to plot per error type.
+        save_dir: Optional directory to save output PNG plots instead of displaying inline.
+    """
+    if isinstance(val_predictions_csv_or_df, str):
+        df = pd.read_csv(val_predictions_csv_or_df)
+    else:
+        df = val_predictions_csv_or_df.copy()
+
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+
+    for defect_name in classes:
+        print(f"\n" + "=" * 70)
+        print(f"       VISUAL ERROR ANALYSIS: {defect_name.upper()}")
+        print("=" * 70)
+
+        # 1. Missed Defects (False Negatives: GT > 0, Dice == 0)
+        fns = df[(df['defect_type'] == defect_name) & (df['error_type'] == 'FN')].sort_values(
+            by='gt_pixels', ascending=False
+        ).head(samples_per_category)
+
+        if len(fns) > 0:
+            print(f"\n>>> Worst False Negative (Missed {defect_name}):")
+            for _, row in fns.iterrows():
+                save_path = os.path.join(save_dir, f"{defect_name}_FN_{row['image_id']}.png") if save_dir else None
+                visualize_defect_comparison(
+                    image_dir=image_dir,
+                    image_id=row['image_id'],
+                    defect_type=defect_name,
+                    gt_rle=row['gt_rle'],
+                    pred_rle=row['pred_rle'],
+                    dice=row['dice'],
+                    max_prob=row['max_prob'],
+                    error_type="False Negative (Missed Defect)",
+                    save_path=save_path,
+                )
+        else:
+            print(f"No False Negatives found for {defect_name}.")
+
+        # 2. Hallucinations (False Positives: GT == 0, Pred > 0)
+        fps = df[(df['defect_type'] == defect_name) & (df['error_type'] == 'FP')].sort_values(
+            by='pred_pixels', ascending=False
+        ).head(samples_per_category)
+
+        if len(fps) > 0:
+            print(f"\n>>> Worst False Positive (Hallucination on Clean Steel for {defect_name}):")
+            for _, row in fps.iterrows():
+                save_path = os.path.join(save_dir, f"{defect_name}_FP_{row['image_id']}.png") if save_dir else None
+                visualize_defect_comparison(
+                    image_dir=image_dir,
+                    image_id=row['image_id'],
+                    defect_type=defect_name,
+                    gt_rle=row['gt_rle'],
+                    pred_rle=row['pred_rle'],
+                    dice=row['dice'],
+                    max_prob=row['max_prob'],
+                    error_type="False Positive (Hallucination)",
+                    save_path=save_path,
+                )
+        else:
+            print(f"No False Positives found for {defect_name}.")
