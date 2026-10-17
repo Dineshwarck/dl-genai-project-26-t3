@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from src.model import ScratchUNet
-from src.metrics import post_process_mask, CLASS_THRESHOLDS, MIN_AREAS
+from src.metrics import post_process_mask, CLASS_THRESHOLDS, MIN_AREAS, MAX_AREAS
 from src.utils import mask_to_rle
 import wandb
 
@@ -63,6 +63,8 @@ def generate_submission(
     output_csv='submission.csv',
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,
+    max_areas=MAX_AREAS,
+    filter_geometry=True,
     use_tta=True,
     batch_size=8,
     sample_limit=None,
@@ -129,8 +131,13 @@ def generate_submission(
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)  # (B, 4, 128, 800)
 
             for i, img_id in enumerate(img_ids):
-                # Clean small noise blobs below area thresholds
-                cleaned_mask_4ch = post_process_mask(preds_bin[i], min_areas=min_areas)
+                # Clean small noise blobs and enforce morphology/area bounds
+                cleaned_mask_4ch = post_process_mask(
+                    preds_bin[i],
+                    min_areas=min_areas,
+                    max_areas=max_areas,
+                    filter_geometry=filter_geometry,
+                )
 
                 for c, defect_name in enumerate(DEFECT_CLASSES):
                     channel_mask = cleaned_mask_4ch[c]
