@@ -200,10 +200,21 @@ def evaluate_validation_set(
     results_df.to_csv(output_csv, index=False)
     print(f"\n[OK] Validation predictions saved to: {output_csv}")
 
-    # 7. Compute Official Competition Metrics
-    all_preds_tensor = torch.cat(all_preds_list, dim=0)
-    all_targets_tensor = torch.cat(all_targets_list, dim=0)
-    metrics = compute_competition_metrics(all_preds_tensor, all_targets_tensor, threshold=0.5)
+    # 7. Compute Official Competition Metrics directly from post-processed results_df
+    pos_df = results_df[results_df['gt_pixels'] > 0]
+    neg_df = results_df[results_df['gt_pixels'] == 0]
+
+    fg_dice = float(pos_df['dice'].mean()) if len(pos_df) > 0 else 1.0
+    empty_acc = float((neg_df['pred_pixels'] == 0).mean()) if len(neg_df) > 0 else 1.0
+    fp_score = float(1.0 - (neg_df['pred_pixels'] / (128 * 800)).mean()) if len(neg_df) > 0 else 1.0
+    official_score = 0.70 * fg_dice + 0.20 * fp_score + 0.10 * empty_acc
+
+    metrics = {
+        'foreground_dice': fg_dice,
+        'false_positive_score': fp_score,
+        'empty_accuracy': empty_acc,
+        'official_score': official_score,
+    }
 
     # Per-Class Foreground Dice Breakdown
     per_class_f1 = {}
