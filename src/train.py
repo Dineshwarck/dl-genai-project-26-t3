@@ -55,6 +55,7 @@ def train_model(
     batch_size=8,
     lr=3e-4,
     use_sampler=True,
+    balanced_sampler=None,
     use_focal=True,
     focal_gamma=2.0,
     focal_alpha=(0.75, 0.85, 0.50, 0.60),
@@ -63,6 +64,9 @@ def train_model(
     sample_limit=None,
     num_workers=None,
 ):
+     if balanced_sampler is not None:
+         use_sampler = balanced_sampler
+
      # 1. Device Agnostic code
      device = "cuda" if torch.cuda.is_available() else "cpu"
      print(f"Using device: {device}")
