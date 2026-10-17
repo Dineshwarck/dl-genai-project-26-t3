@@ -63,6 +63,7 @@ def generate_submission(
     output_csv='submission.csv',
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,
+    use_tta=True,
     batch_size=8,
     sample_limit=None,
     device=None,
@@ -115,10 +116,16 @@ def generate_submission(
     predictions = {}  # Map (image_id, defect_type) -> rle_string
 
     with torch.no_grad():
-        for images, img_ids in tqdm(test_loader, desc="Generating Predictions"):
+        for images, img_ids in tqdm(test_loader, desc=f"Generating Predictions{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
-            logits = model(images)
-            probs = torch.sigmoid(logits)
+            if use_tta:
+                p1 = torch.sigmoid(model(images))
+                images_hflip = torch.flip(images, dims=[3])
+                p2 = torch.flip(torch.sigmoid(model(images_hflip)), dims=[3])
+                probs = 0.5 * (p1 + p2)
+            else:
+                probs = torch.sigmoid(model(images))
+
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)  # (B, 4, 128, 800)
 
             for i, img_id in enumerate(img_ids):
