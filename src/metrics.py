@@ -23,28 +23,74 @@ CLASS_THRESHOLDS = {
     3: 0.38,  # defect_d: lower threshold for subtle low-contrast texture patches
 }
 
-def post_process_mask(mask_numpy, min_areas=MIN_AREAS):
+# Maximum area ceilings to eliminate whole-sheet false alarms (e.g. 49k shadow hallucinations)
+MAX_AREAS = {
+    0: 25000,  # defect_a scratches never cover >25k pixels
+    1: 15000,  # defect_b edge cracks never cover >15k pixels
+    2: 35000,  # defect_c scabs never cover >35k pixels (prunes full-sheet rough scale false alarms)
+    3: 35000,  # defect_d patches never cover >35k pixels (prunes 49k lighting/shadow hallucinations)
+}
+
+def post_process_mask(
+    mask_numpy,
+    min_areas=MIN_AREAS,
+    max_areas=MAX_AREAS,
+    filter_geometry=True,
+):
     """
     mask_numpy: shape (4, H, W) binary {0,1}
-    Filters small connected blobs below class thresholds.
+    Applies:
+      1. Minimum and Maximum Area thresholding (filters speckles and giant whole-sheet hallucinations).
+      2. Geometric aspect-ratio and height continuity filtering for thin longitudinal defects:
+         - defect_b (edge cracks): requires vertical continuity (H_span >= 25 px, AspectRatio H/W >= 2.0).
+         - defect_a (thin scratches): requires vertical elongation (H_span >= 15 px, AspectRatio H/W >= 1.2).
     """
     clean_mask = np.zeros_like(mask_numpy)
     num_classes = mask_numpy.shape[0]
+
     for cls_idx in range(num_classes):
         channel = mask_numpy[cls_idx].astype(np.uint8)
-        min_area = min_areas.get(cls_idx, 0)
-        if channel.sum() == 0 or min_area == 0:
-            clean_mask[cls_idx] = channel
+        total_pixels = int(channel.sum())
+
+        if total_pixels == 0:
             continue
-        
+
+        # Ceiling check: Discard giant whole-sheet false alarms (e.g. 49k shadow hallucinations)
+        max_area = max_areas.get(cls_idx, None) if max_areas else None
+        if max_area and total_pixels > max_area:
+            continue
+
+        min_area = min_areas.get(cls_idx, 0)
+        if total_pixels < min_area:
+            continue
+
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
             channel, connectivity=8
-        ) 
-    
+        )
+
         for label in range(1, num_labels):
             area = stats[label, cv2.CC_STAT_AREA]
-            if area >= min_area:
-                clean_mask[cls_idx][labels == label] = 1
+            h = stats[label, cv2.CC_STAT_HEIGHT]
+            w = stats[label, cv2.CC_STAT_WIDTH]
+
+            if area < min_area:
+                continue
+
+            if filter_geometry:
+                # Defect B: Edge cracks are tall vertical tears (H_span >= 25 px, H/W >= 2.0)
+                if cls_idx == 1:
+                    aspect_ratio = h / max(w, 1)
+                    if h < 25 or aspect_ratio < 2.0:
+                        continue
+
+                # Defect A: Longitudinal scratches are vertical streaks (H_span >= 15 px, H/W >= 1.2)
+                elif cls_idx == 0:
+                    aspect_ratio = h / max(w, 1)
+                    if h < 15 or aspect_ratio < 1.2:
+                        continue
+
+            clean_mask[cls_idx][labels == label] = 1
+
     return clean_mask
 
 def compute_competition_metrics(pred_masks, gt_masks, threshold=CLASS_THRESHOLDS):
