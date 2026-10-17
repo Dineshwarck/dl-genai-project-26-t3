@@ -22,8 +22,9 @@ class DoubleConv(nn.Module):
     
 
 class ScratchUNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=4, dropout_rate=0.3):
+    def __init__(self, in_channels=3, out_channels=4, dropout_rate=0.3, with_classifier=True):
         super().__init__()
+        self.with_classifier = with_classifier
 
         # --- Encoder (Downsampling) ---
         self.enc1 = DoubleConv(in_channels, 64)
@@ -42,6 +43,22 @@ class ScratchUNet(nn.Module):
         self.bottleneck = DoubleConv(512, 1024)
         self.dropout = nn.Dropout2d(p=dropout_rate) if dropout_rate > 0 else nn.Identity()
 
+        # --- Multi-Scale MaxPool Auxiliary Classification Head ---
+        # 1. Enc1 (64ch) & Enc2 (128ch): MaxPool captures peak activations of 1-pixel scratches without dilution!
+        # 2. Bottleneck (1024ch): AvgPool captures global texture/area deformation!
+        if with_classifier:
+            self.max_pool_enc1 = nn.AdaptiveMaxPool2d((1, 1))
+            self.max_pool_enc2 = nn.AdaptiveMaxPool2d((1, 1))
+            self.avg_pool_b = nn.AdaptiveAvgPool2d((1, 1))
+            # 64 + 128 + 1024 = 1216 channels
+            self.cls_head = nn.Sequential(
+                nn.Linear(1216, 256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.3),
+                nn.Linear(256, out_channels),
+            )
+
         # --- Decoder (Upsampling) ---
         self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
         self.dec4 = DoubleConv(1024, 512)
@@ -59,7 +76,7 @@ class ScratchUNet(nn.Module):
         # 1x1 Convolution to map 64 features to out_channels (e.g. 4 defect classes)
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
-    def forward(self, x):
+    def forward(self, x, return_cls=False):
         # 1. Encoder stages
         e1 = self.enc1(x)
         p1 = self.pool1(e1)
@@ -77,7 +94,16 @@ class ScratchUNet(nn.Module):
         b = self.bottleneck(p4)
         b = self.dropout(b)
 
-        # 3. Decoder stages with skip connections
+        # 3. Auxiliary Classification Logits (Multi-Scale Fusion)
+        cls_logits = None
+        if self.with_classifier and (return_cls or self.training):
+            feat_e1 = self.max_pool_enc1(e1).flatten(1)
+            feat_e2 = self.max_pool_enc2(e2).flatten(1)
+            feat_b = self.avg_pool_b(b).flatten(1)
+            feat = torch.cat([feat_e1, feat_e2, feat_b], dim=1)
+            cls_logits = self.cls_head(feat)
+
+        # 4. Decoder stages with skip connections
         d4 = self.upconv4(b)
         d4_cat = torch.cat((d4, e4), dim=1)
         d4_out = self.dec4(d4_cat)
@@ -94,6 +120,9 @@ class ScratchUNet(nn.Module):
         d1_cat = torch.cat((d1, e1), dim=1)
         d1_out = self.dec1(d1_cat)
 
-        # 4. Final 1x1 convolution
-        out = self.final_conv(d1_out)
-        return out
+        # 5. Final 1x1 convolution
+        mask_logits = self.final_conv(d1_out)
+
+        if return_cls or (self.training and cls_logits is not None):
+            return mask_logits, cls_logits
+        return mask_logits

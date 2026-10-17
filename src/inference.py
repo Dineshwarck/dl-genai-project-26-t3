@@ -99,10 +99,12 @@ def generate_submission(
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     # 4. Load Trained Model
-    model = ScratchUNet(in_channels=3, out_channels=4).to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
+    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
-    print(f"Loaded weights from {checkpoint_path}")
+    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls})")
 
     # Setup per-channel threshold tensor
     if isinstance(threshold, (int, float)):
@@ -121,12 +123,29 @@ def generate_submission(
         for images, img_ids in tqdm(test_loader, desc=f"Generating Predictions{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
             if use_tta:
-                p1 = torch.sigmoid(model(images))
+                out1 = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
                 images_hflip = torch.flip(images, dims=[3])
-                p2 = torch.flip(torch.sigmoid(model(images_hflip)), dims=[3])
-                probs = 0.5 * (p1 + p2)
+                out2 = model(images_hflip, return_cls=True) if getattr(model, 'with_classifier', False) else model(images_hflip)
+
+                if isinstance(out1, (tuple, list)):
+                    m1, c1 = out1
+                    m2, c2 = out2
+                    mask_probs = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
+                    cls_probs = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
+                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
+                    probs = mask_probs * gate
+                else:
+                    probs = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
             else:
-                probs = torch.sigmoid(model(images))
+                out = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
+                if isinstance(out, (tuple, list)):
+                    m, c = out
+                    mask_probs = torch.sigmoid(m)
+                    cls_probs = torch.sigmoid(c)
+                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
+                    probs = mask_probs * gate
+                else:
+                    probs = torch.sigmoid(out)
 
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)  # (B, 4, 128, 800)
 

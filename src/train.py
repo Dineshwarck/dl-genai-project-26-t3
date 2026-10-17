@@ -30,9 +30,19 @@ def get_augmentations():
             p=0.5,
         ),
         A.RandomBrightnessContrast(
-            brightness_limit=0.2, contrast_limit=0.2, p=0.5
+            brightness_limit=0.25, contrast_limit=0.25, p=0.5
         ),
         A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=0.5),
+        A.CoarseDropout(
+            max_holes=6,
+            max_height=32,
+            max_width=64,
+            min_holes=1,
+            min_height=16,
+            min_width=16,
+            fill_value=0,
+            p=0.3,
+        ),
         A.GaussNoise(std_range=(0.01, 0.04), p=0.2),
     ])
     val_transform = A.Compose([A.Resize(height=128, width=800)])
@@ -129,13 +139,19 @@ def train_model(
             images, masks = images.to(device), masks.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, masks)
-            loss.backward()
+            mask_logits, cls_logits = model(images, return_cls=True)
+            mask_loss = criterion(mask_logits, masks)
+
+            # Image-level target: 1.0 if class exists in the image, else 0.0
+            cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
+            cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+
+            total_loss = mask_loss + 0.3 * cls_loss
+            total_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            train_loss += loss.item()
+            train_loss += total_loss.item()
         
         avg_train_loss = train_loss / len(train_loader)
 
@@ -146,13 +162,22 @@ def train_model(
         all_targets = []
 
         with torch.no_grad():
-            for images, masks in tqdm(val_loader,desc=f"Epoch {epoch+1}/{epochs} [Val]"):
+            for images, masks in tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]"):
                 images, masks = images.to(device), masks.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, masks)
-                val_loss += loss.item()
+                mask_logits, cls_logits = model(images, return_cls=True)
+                mask_loss = criterion(mask_logits, masks)
 
-                all_preds.append(outputs.cpu())
+                cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
+                cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+                total_val_loss = mask_loss + 0.3 * cls_loss
+                val_loss += total_val_loss.item()
+
+                # Multi-Task Gating: Zero out masks where classifier predicts clean image (< 0.45)
+                mask_probs = torch.sigmoid(mask_logits)
+                cls_probs = torch.sigmoid(cls_logits).unsqueeze(-1).unsqueeze(-1)
+                gated_probs = mask_probs * (cls_probs > 0.45).float()
+
+                all_preds.append(gated_probs.cpu())
                 all_targets.append(masks.cpu())
         
         avg_val_loss = val_loss / len(val_loader)   

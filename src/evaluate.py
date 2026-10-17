@@ -85,10 +85,12 @@ def evaluate_validation_set(
     )
 
     # 3. Load Trained Model
-    model = ScratchUNet(in_channels=3, out_channels=4).to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
+    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
-    print(f"Loaded weights from {checkpoint_path}")
+    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls})")
 
     # 4. Setup Threshold Tensor
     if isinstance(threshold, (int, float)):
@@ -110,12 +112,29 @@ def evaluate_validation_set(
         for images, masks in tqdm(val_loader, desc=f"Evaluating Validation Set{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
             if use_tta:
-                p1 = torch.sigmoid(model(images))
+                out1 = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
                 images_hflip = torch.flip(images, dims=[3])
-                p2 = torch.flip(torch.sigmoid(model(images_hflip)), dims=[3])
-                probs = 0.5 * (p1 + p2)
+                out2 = model(images_hflip, return_cls=True) if getattr(model, 'with_classifier', False) else model(images_hflip)
+
+                if isinstance(out1, (tuple, list)):
+                    m1, c1 = out1
+                    m2, c2 = out2
+                    mask_probs = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
+                    cls_probs = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
+                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
+                    probs = mask_probs * gate
+                else:
+                    probs = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
             else:
-                probs = torch.sigmoid(model(images))
+                out = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
+                if isinstance(out, (tuple, list)):
+                    m, c = out
+                    mask_probs = torch.sigmoid(m)
+                    cls_probs = torch.sigmoid(c)
+                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
+                    probs = mask_probs * gate
+                else:
+                    probs = torch.sigmoid(out)
 
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)
             probs_np = probs.cpu().numpy()
@@ -445,8 +464,10 @@ def find_optimal_thresholds(
     )
 
     # 3. Load Trained Model
-    model = ScratchUNet(in_channels=3, out_channels=4).to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
+    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
 
     # 4. Cache Raw Predictions and Targets (Stored in uint8/bool to minimize RAM)
@@ -457,12 +478,29 @@ def find_optimal_thresholds(
         for images, masks in tqdm(val_loader, desc=f"Caching Val Probabilities{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
             if use_tta:
-                p1 = torch.sigmoid(model(images))
+                out1 = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
                 images_hflip = torch.flip(images, dims=[3])
-                p2 = torch.flip(torch.sigmoid(model(images_hflip)), dims=[3])
-                probs = 0.5 * (p1 + p2)
+                out2 = model(images_hflip, return_cls=True) if getattr(model, 'with_classifier', False) else model(images_hflip)
+
+                if isinstance(out1, (tuple, list)):
+                    m1, c1 = out1
+                    m2, c2 = out2
+                    mask_probs = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
+                    cls_probs = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
+                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
+                    probs = mask_probs * gate
+                else:
+                    probs = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
             else:
-                probs = torch.sigmoid(model(images))
+                out = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
+                if isinstance(out, (tuple, list)):
+                    m, c = out
+                    mask_probs = torch.sigmoid(m)
+                    cls_probs = torch.sigmoid(c)
+                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
+                    probs = mask_probs * gate
+                else:
+                    probs = torch.sigmoid(out)
 
             # Store as uint8 (0-255) and bool to prevent high memory usage
             probs_uint8 = (probs.cpu() * 255.0).to(torch.uint8).numpy()
