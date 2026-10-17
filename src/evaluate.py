@@ -5,7 +5,10 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    plt = None
 
 from src.dataset import SurfaceDefectDataset, get_stratified_split, DEFECT_CLASSES
 from src.model import ScratchUNet
@@ -25,6 +28,7 @@ def evaluate_validation_set(
     batch_size=8,
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,
+    use_tta=True,
     sample_limit=None,
     device=None,
 ):
@@ -101,16 +105,21 @@ def evaluate_validation_set(
 
     img_counter = 0
     with torch.no_grad():
-        for images, masks in tqdm(val_loader, desc="Evaluating Validation Set"):
+        for images, masks in tqdm(val_loader, desc=f"Evaluating Validation Set{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
-            logits = model(images)
-            probs = torch.sigmoid(logits)
+            if use_tta:
+                p1 = torch.sigmoid(model(images))
+                images_hflip = torch.flip(images, dims=[3])
+                p2 = torch.flip(torch.sigmoid(model(images_hflip)), dims=[3])
+                probs = 0.5 * (p1 + p2)
+            else:
+                probs = torch.sigmoid(model(images))
 
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)
             probs_np = probs.cpu().numpy()
             masks_np = masks.numpy().astype(np.uint8)
 
-            all_preds_list.append(logits.cpu())
+            all_preds_list.append(probs.cpu())
             all_targets_list.append(masks.cpu())
 
             batch_len = images.shape[0]
@@ -375,3 +384,206 @@ def plot_class_error_gallery(
                 )
         else:
             print(f"No False Positives found for {defect_name}.")
+
+
+def find_optimal_thresholds(
+    data_csv='data/train.csv',
+    image_dir='data/train',
+    checkpoint_path='models/best_scratch_unet.pth',
+    wandb_artifact='scratch-unet-best:latest',
+    val_size=0.20,
+    random_state=42,
+    batch_size=8,
+    use_tta=True,
+    threshold_candidates=(0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60),
+    sample_limit=None,
+    device=None,
+):
+    """
+    Performs an automated data-driven grid search over decision thresholds
+    and minimum connected component area filters on the validation set.
+    Directly maximizes the official competition metric:
+        Score = 0.70 * Foreground_Dice + 0.20 * FP_Score + 0.10 * Empty_Accuracy
+
+    Returns:
+        optimal_thresholds: dict {0: th0, 1: th1, 2: th2, 3: th3}
+        optimal_min_areas: dict {0: area0, 1: area1, 2: area2, 3: area3}
+        best_summary: dict of detailed scores per class
+    """
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Running Validation Threshold Grid Search on device: {device} (TTA={use_tta})")
+
+    # 1. Resolve Checkpoint
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        print(f"Using local checkpoint: {checkpoint_path}")
+    elif wandb_artifact:
+        checkpoint_path = fetch_model_from_wandb(artifact_name=wandb_artifact)
+    else:
+        checkpoint_path = fetch_model_from_wandb(artifact_name='scratch-unet-best:latest')
+
+    # 2. Load Stratified Validation Split
+    df = pd.read_csv(data_csv)
+    _, val_df = get_stratified_split(df, val_size=val_size, random_state=random_state)
+    if sample_limit is not None:
+        val_df = val_df.head(sample_limit)
+    print(f"Total validation images for optimization: {len(val_df)}")
+
+    val_dataset = SurfaceDefectDataset(val_df, image_dir=image_dir, transforms=None)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0 if os.name == 'nt' else 2,
+    )
+
+    # 3. Load Trained Model
+    model = ScratchUNet(in_channels=3, out_channels=4).to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    model.eval()
+
+    # 4. Cache Raw Predictions and Targets (Stored in uint8/bool to minimize RAM)
+    all_probs_uint8 = []
+    all_masks_bool = []
+
+    with torch.no_grad():
+        for images, masks in tqdm(val_loader, desc=f"Caching Val Probabilities{' (with TTA)' if use_tta else ''}"):
+            images = images.to(device)
+            if use_tta:
+                p1 = torch.sigmoid(model(images))
+                images_hflip = torch.flip(images, dims=[3])
+                p2 = torch.flip(torch.sigmoid(model(images_hflip)), dims=[3])
+                probs = 0.5 * (p1 + p2)
+            else:
+                probs = torch.sigmoid(model(images))
+
+            # Store as uint8 (0-255) and bool to prevent high memory usage
+            probs_uint8 = (probs.cpu() * 255.0).to(torch.uint8).numpy()
+            masks_bool = (masks > 0.5).to(torch.bool).numpy()
+
+            all_probs_uint8.append(probs_uint8)
+            all_masks_bool.append(masks_bool)
+
+    probs_arr = np.concatenate(all_probs_uint8, axis=0)  # (N, 4, 128, 800) uint8
+    masks_arr = np.concatenate(all_masks_bool, axis=0)   # (N, 4, 128, 800) bool
+
+    N, _, H, W = probs_arr.shape
+    canvas_pixels = H * W
+
+    # Class-specific candidate area ranges tailored to defect morphology
+    candidate_areas_by_class = {
+        0: [50, 150, 250, 400],           # defect_a: thin scratches
+        1: [100, 200, 300, 500],          # defect_b: edge cracks
+        2: [400, 600, 800, 1000, 1200],   # defect_c: scabs/pitting
+        3: [600, 1000, 1400, 1800, 2200], # defect_d: large texture patches
+    }
+
+    optimal_thresholds = {}
+    optimal_min_areas = {}
+    best_class_metrics = {}
+
+    print("\n" + "=" * 80)
+    print("           GRID SEARCHING OPTIMAL DECISION PARAMETERS PER CLASS")
+    print("=" * 80)
+
+    for c, defect_name in enumerate(DEFECT_CLASSES):
+        c_probs = probs_arr[:, c]  # (N, 128, 800) uint8
+        c_gt = masks_arr[:, c]     # (N, 128, 800) bool
+
+        gt_pixel_sums = c_gt.sum(axis=(1, 2))
+        is_pos = gt_pixel_sums > 0
+        is_neg = ~is_pos
+        num_pos = int(is_pos.sum())
+        num_neg = int(is_neg.sum())
+
+        best_score = -1.0
+        best_th = 0.50
+        best_area = 100
+        best_stats = {}
+
+        candidate_areas = candidate_areas_by_class.get(c, [100, 300, 600, 1000])
+
+        for th in threshold_candidates:
+            th_uint8 = int(th * 255.0)
+            bin_raw = (c_probs > th_uint8).astype(np.uint8)
+
+            for area in candidate_areas:
+                # Connected component area filtering
+                filtered_preds = np.zeros_like(bin_raw, dtype=bool)
+
+                for i in range(N):
+                    total_px = int(bin_raw[i].sum())
+                    if total_px < area:
+                        continue
+                    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+                        bin_raw[i], connectivity=8
+                    )
+                    for l in range(1, num_labels):
+                        if stats[l, cv2.CC_STAT_AREA] >= area:
+                            filtered_preds[i, labels == l] = True
+
+                # Compute competition metrics for class c
+                # 1. Foreground Dice strictly across positive ground-truth images
+                if num_pos > 0:
+                    pos_inter = (filtered_preds[is_pos] & c_gt[is_pos]).sum(axis=(1, 2))
+                    pos_union = filtered_preds[is_pos].sum(axis=(1, 2)) + gt_pixel_sums[is_pos]
+                    fg_dice = float((2.0 * pos_inter / (pos_union + 1e-7)).mean())
+                else:
+                    fg_dice = 1.0
+
+                # 2. False Positive Score & Empty Accuracy across clean ground-truth images
+                if num_neg > 0:
+                    neg_fp_pixels = filtered_preds[is_neg].sum(axis=(1, 2))
+                    fp_score = float(1.0 - (neg_fp_pixels / canvas_pixels).mean())
+                    empty_acc = float((neg_fp_pixels == 0).mean())
+                else:
+                    fp_score = 1.0
+                    empty_acc = 1.0
+
+                # Official composite score
+                official_score = 0.70 * fg_dice + 0.20 * fp_score + 0.10 * empty_acc
+
+                if official_score > best_score:
+                    best_score = official_score
+                    best_th = th
+                    best_area = area
+                    best_stats = {
+                        'fg_dice': fg_dice,
+                        'fp_score': fp_score,
+                        'empty_acc': empty_acc,
+                        'official_score': official_score,
+                    }
+
+        optimal_thresholds[c] = best_th
+        optimal_min_areas[c] = best_area
+        best_class_metrics[defect_name] = best_stats
+
+        print(
+            f"Class {c} ({defect_name:<8}) | "
+            f"Best Th: {best_th:.2f} | "
+            f"Best Min Area: {best_area:>4} px | "
+            f"Dice: {best_stats['fg_dice']:.4f} | "
+            f"FP Score: {best_stats['fp_score']:.4f} | "
+            f"Empty Acc: {best_stats['empty_acc']:.4f} | "
+            f"Official Score: {best_stats['official_score']:.4f}"
+        )
+
+    # Compute overall composite across all 4 classes
+    overall_dice = np.mean([m['fg_dice'] for m in best_class_metrics.values()])
+    overall_fp = np.mean([m['fp_score'] for m in best_class_metrics.values()])
+    overall_empty = np.mean([m['empty_acc'] for m in best_class_metrics.values()])
+    overall_score = 0.70 * overall_dice + 0.20 * overall_fp + 0.10 * overall_empty
+
+    print("-" * 80)
+    print(
+        f"OVERALL OPTIMIZED VALIDATION SCORE: {overall_score:.4f} "
+        f"(Dice: {overall_dice:.4f}, FP: {overall_fp:.4f}, Empty: {overall_empty:.4f})"
+    )
+    print("=" * 80)
+
+    print("\nOptimal Thresholds Dictionary:")
+    print(optimal_thresholds)
+    print("Optimal Min Areas Dictionary:")
+    print(optimal_min_areas)
+
+    return optimal_thresholds, optimal_min_areas, best_class_metrics
