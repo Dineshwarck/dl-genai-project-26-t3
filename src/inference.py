@@ -171,6 +171,7 @@ def generate_submission(
     soft_gating=True,
     ensemble_paths=None,
     filter_geometry=False,
+    use_closing=True,
     use_tta=True,
     batch_size=8,
     sample_limit=None,
@@ -265,6 +266,7 @@ def generate_submission(
                     min_areas=min_areas,
                     max_areas=max_areas,
                     filter_geometry=filter_geometry,
+                    use_closing=use_closing,
                 )
 
                 for c, defect_name in enumerate(DEFECT_CLASSES):

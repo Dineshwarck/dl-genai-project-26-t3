@@ -39,22 +39,29 @@ def post_process_mask(
     min_areas=MIN_AREAS,
     max_areas=MAX_AREAS,
     filter_geometry=True,
+    use_closing=True,
 ):
     """
     mask_numpy: shape (4, H, W) binary {0,1}
     Applies:
-      1. Minimum and Maximum Area thresholding (filters speckles and giant whole-sheet hallucinations).
-      2. Geometric aspect-ratio and height continuity filtering for thin longitudinal defects:
-         - defect_b (edge cracks): requires vertical continuity (H_span >= 25 px, AspectRatio H/W >= 2.0).
-         - defect_a (thin scratches): requires vertical elongation (H_span >= 15 px, AspectRatio H/W >= 1.2).
+      1. Morphological closing (3x3 rect) to connect adjacent clusters and fill pinholes.
+      2. Minimum and Maximum Area thresholding (filters speckles and giant whole-sheet hallucinations).
+      3. Geometric aspect-ratio and height continuity filtering for thin longitudinal defects.
     """
     clean_mask = np.zeros_like(mask_numpy)
     num_classes = mask_numpy.shape[0]
 
     for cls_idx in range(num_classes):
         channel = mask_numpy[cls_idx].astype(np.uint8)
-        total_pixels = int(channel.sum())
+        if channel.sum() == 0:
+            continue
 
+        if use_closing:
+            # Connect adjacent clusters separated by 1-2 pixels and fill internal holes
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            channel = cv2.morphologyEx(channel, cv2.MORPH_CLOSE, kernel)
+
+        total_pixels = int(channel.sum())
         if total_pixels == 0:
             continue
 
