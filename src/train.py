@@ -15,6 +15,7 @@ from src.dataset import SurfaceDefectDataset, get_stratified_split, get_defect_a
 from src.losses import ComboLoss
 from src.metrics import compute_competition_metrics, CLASS_THRESHOLDS
 from src.model import ScratchUNet
+from src.inference import fetch_model_from_wandb, DEFAULT_CLS_GATES
 
 
 def get_augmentations():
@@ -51,9 +52,11 @@ def get_augmentations():
 def train_model(
     data_csv=r'D:\SurfaceGuard_AI\data\train.csv',
     image_dir=r'D:\SurfaceGuard_AI\data\train',
-    epochs=15,
+    epochs=30,
     batch_size=8,
     lr=3e-4,
+    scheduler_type='onecycle',
+    resume_from=None,
     use_sampler=True,
     balanced_sampler=None,
     use_focal=True,
@@ -61,8 +64,11 @@ def train_model(
     focal_alpha=(0.75, 0.85, 0.50, 0.60),
     pos_weight=(12.0, 25.0, 3.0, 6.0),
     channel_weights=(1.5, 2.5, 1.0, 1.2),
+    soft_gating=True,
+    cls_gates=None,
     sample_limit=None,
     num_workers=None,
+    wandb_artifact='scratch-unet-best:latest',
 ):
      if balanced_sampler is not None:
          use_sampler = balanced_sampler
@@ -115,6 +121,26 @@ def train_model(
 
      # 5. Model (4 Output Channels), Focal+Dice ComboLoss & Optimizer
      model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3).to(device)
+
+     # Optional resume checkpoint (local or W&B)
+     if resume_from is not None:
+         ckpt_path = resume_from
+         if not os.path.exists(ckpt_path):
+             print(f"[Resume] Checkpoint '{ckpt_path}' not found locally. Attempting W&B fetch...")
+             try:
+                 ckpt_path = fetch_model_from_wandb(artifact_name=wandb_artifact)
+             except Exception as e:
+                 print(f"[Resume] Failed to fetch from W&B: {e}. Starting from scratch.")
+                 ckpt_path = None
+
+         if ckpt_path and os.path.exists(ckpt_path):
+             print(f"[Resume] Loading weights from: {ckpt_path}")
+             ckpt = torch.load(ckpt_path, map_location=device)
+             state_dict = ckpt['state_dict'] if isinstance(ckpt, dict) and 'state_dict' in ckpt else ckpt
+             state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+             missing, unexpected = model.load_state_dict(state_dict, strict=False)
+             print(f"[Resume] Weights loaded successfully. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
+
      criterion = ComboLoss(
          bce_weight=1.0,
          dice_weight=1.0,
@@ -126,9 +152,46 @@ def train_model(
          channel_weights=channel_weights,
      )
      optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-         optimizer, T_max=epochs, eta_min=1e-6
-     )
+
+     # Dynamic Learning Rate Scheduler Configuration
+     sched_type = str(scheduler_type).lower()
+     is_step_per_batch = False
+     if sched_type == 'onecycle':
+         total_steps = epochs * len(train_loader)
+         scheduler = torch.optim.lr_scheduler.OneCycleLR(
+             optimizer,
+             max_lr=lr,
+             total_steps=total_steps,
+             pct_start=0.10,
+             anneal_strategy='cos',
+             div_factor=10.0,
+             final_div_factor=100.0,
+         )
+         is_step_per_batch = True
+         print(f"Configured OneCycleLR: {total_steps} steps, pct_start=0.10, max_lr={lr}")
+     elif sched_type == 'cosine':
+         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+             optimizer, T_max=epochs, eta_min=1e-6
+         )
+         print(f"Configured CosineAnnealingLR: T_max={epochs}, eta_min=1e-6")
+     elif sched_type in ('warm_restarts', 'cosine_restarts'):
+         t_0 = max(5, epochs // 3)
+         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+             optimizer, T_0=t_0, T_mult=1, eta_min=1e-6
+         )
+         print(f"Configured CosineAnnealingWarmRestarts: T_0={t_0}, eta_min=1e-6")
+     elif sched_type == 'plateau':
+         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+             optimizer, mode='max', factor=0.5, patience=3, min_lr=1e-6
+         )
+         print("Configured ReduceLROnPlateau: mode=max (official_score), factor=0.5, patience=3")
+     else:
+         raise ValueError(f"Unknown scheduler_type '{scheduler_type}'. Choose 'onecycle', 'cosine', 'warm_restarts', or 'plateau'.")
+
+     # Setup gating thresholds for validation
+     if cls_gates is None:
+         cls_gates = DEFAULT_CLS_GATES
+     cls_gate_tensor = torch.tensor([cls_gates[c] for c in range(4)], device=device).view(1, 4, 1, 1)
 
      os.makedirs('models', exist_ok=True)
      best_score = -1.0
@@ -154,6 +217,8 @@ def train_model(
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            if is_step_per_batch:
+                scheduler.step()
 
             train_loss += total_loss.item()
         
@@ -176,10 +241,14 @@ def train_model(
                 total_val_loss = mask_loss + 0.3 * cls_loss
                 val_loss += total_val_loss.item()
 
-                # Multi-Task Gating: Zero out masks where classifier predicts clean image (< 0.45)
+                # Multi-Task Gating: Soft quadratic modulation or hard suppression
                 mask_probs = torch.sigmoid(mask_logits)
                 cls_probs = torch.sigmoid(cls_logits).unsqueeze(-1).unsqueeze(-1)
-                gated_probs = mask_probs * (cls_probs > 0.45).float()
+                if soft_gating:
+                    ratio = torch.clamp(cls_probs / (cls_gate_tensor + 1e-7), max=1.0)
+                    gated_probs = mask_probs * (ratio ** 2)
+                else:
+                    gated_probs = mask_probs * (cls_probs > cls_gate_tensor).float()
 
                 all_preds.append(gated_probs.cpu())
                 all_targets.append(masks.cpu())
@@ -193,8 +262,10 @@ def train_model(
         metrics = compute_competition_metrics(all_preds_tensor, all_targets_tensor, threshold=CLASS_THRESHOLDS)
 
         # --- LOGGING ---
+        curr_lr = optimizer.param_groups[0]['lr']
         print(
             f"Epoch {epoch+1}/{epochs} |"
+            f" LR: {curr_lr:.2e} |"
             f" Train Loss: {avg_train_loss:.4f} |"
             f" Val Loss: {avg_val_loss:.4f} |"
             f" F1-score: {metrics['foreground_dice']:.4f} |"
@@ -241,7 +312,11 @@ def train_model(
             wandb.log_artifact(artifact)
 
         # --- STEP SCHEDULER & FREE MEMORY ---
-        scheduler.step()
+        if not is_step_per_batch:
+            if sched_type == 'plateau':
+                scheduler.step(metrics['official_score'])
+            else:
+                scheduler.step()
         del all_preds, all_targets, all_preds_tensor, all_targets_tensor
         gc.collect()
     
