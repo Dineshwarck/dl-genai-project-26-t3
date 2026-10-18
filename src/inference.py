@@ -147,7 +147,7 @@ def generate_submission(
     cls_gates=DEFAULT_CLS_GATES,
     soft_gating=True,
     ensemble_paths=None,
-    filter_geometry=True,
+    filter_geometry=False,
     use_tta=True,
     batch_size=8,
     sample_limit=None,

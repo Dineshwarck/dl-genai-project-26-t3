@@ -2,25 +2,27 @@ import cv2
 import numpy as np
 import torch
 
-# Optimal minimum connected component area thresholds (in pixels)
-# Tuned based on visual error analysis:
-# - defect_a: 150 px (thin scratches)
-# - defect_b: 200 px (edge cracks)
-# - defect_c: 800 px (scabs/pitting - filters out thousands of false positive scale noise)
-# - defect_d: 1200 px (large texture patches - prevents tiny noisy fragments)
+# Calibrated minimum connected component area thresholds (in pixels for 128x800 canvas)
+# Tailored for Multi-Task U-Net with Soft Quadratic Gating:
+# Since the auxiliary classifier already suppresses false alarms (FP score > 0.997),
+# area thresholds are calibrated so they do NOT discard genuine fine defects:
+# - defect_a: 60 px (thin scratches)
+# - defect_b: 80 px (edge cracks)
+# - defect_c: 250 px (scabs/pitting - preserves the 16% of true defects under 800 px)
+# - defect_d: 400 px (texture patches - preserves genuine small patches)
 MIN_AREAS = {
-    0: 150,
-    1: 200,
-    2: 800,
-    3: 1200,
+    0: 60,
+    1: 80,
+    2: 250,
+    3: 400,
 }
 
-# Optimal class-specific sigmoid decision thresholds
+# Optimal class-specific sigmoid decision thresholds (with soft gating)
 CLASS_THRESHOLDS = {
-    0: 0.35,  # defect_a: lower threshold to capture faint vertical scratches
-    1: 0.30,  # defect_b: lower threshold for rare edge cracks
-    2: 0.60,  # defect_c: higher threshold to prevent hallucinations on rough scale
-    3: 0.38,  # defect_d: lower threshold for subtle low-contrast texture patches
+    0: 0.32,  # defect_a
+    1: 0.28,  # defect_b
+    2: 0.35,  # defect_c
+    3: 0.32,  # defect_d
 }
 
 # Maximum area ceilings to eliminate whole-sheet false alarms (e.g. 49k shadow hallucinations)
