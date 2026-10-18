@@ -74,17 +74,23 @@ def evaluate_validation_set(
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running validation evaluation on device: {device}")
 
-    # 1. Resolve Checkpoints (Supports single or ensemble list)
+    # 1. Resolve Checkpoints (Auto-fetch from W&B if local file does not exist)
+    def _resolve(p):
+        if p and os.path.exists(p):
+            return p
+        print(f"Local checkpoint '{p}' not found on disk. Fetching '{wandb_artifact}' from W&B...")
+        return fetch_model_from_wandb(artifact_name=wandb_artifact)
+
     model_paths = []
     if checkpoint_path:
         if isinstance(checkpoint_path, (list, tuple)):
-            model_paths.extend(checkpoint_path)
+            model_paths.extend([_resolve(p) for p in checkpoint_path])
         else:
-            model_paths.append(checkpoint_path)
+            model_paths.append(_resolve(checkpoint_path))
     elif wandb_artifact:
         model_paths.append(fetch_model_from_wandb(artifact_name=wandb_artifact))
     else:
-        model_paths.append('models/best_scratch_unet.pth')
+        model_paths.append(_resolve('models/best_scratch_unet.pth'))
 
     if ensemble_paths:
         if isinstance(ensemble_paths, (list, tuple)):
@@ -467,17 +473,23 @@ def find_optimal_thresholds(
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running Validation Threshold Grid Search on device: {device} (TTA={use_tta})")
 
-    # 1. Resolve Checkpoints (Supports single or ensemble list)
+    # 1. Resolve Checkpoints (Auto-fetch from W&B if local file does not exist)
+    def _resolve(p):
+        if p and os.path.exists(p):
+            return p
+        print(f"Local checkpoint '{p}' not found on disk. Fetching '{wandb_artifact}' from W&B...")
+        return fetch_model_from_wandb(artifact_name=wandb_artifact)
+
     model_paths = []
     if checkpoint_path:
         if isinstance(checkpoint_path, (list, tuple)):
-            model_paths.extend(checkpoint_path)
+            model_paths.extend([_resolve(p) for p in checkpoint_path])
         else:
-            model_paths.append(checkpoint_path)
+            model_paths.append(_resolve(checkpoint_path))
     elif wandb_artifact:
         model_paths.append(fetch_model_from_wandb(artifact_name=wandb_artifact))
     else:
-        model_paths.append('models/best_scratch_unet.pth')
+        model_paths.append(_resolve('models/best_scratch_unet.pth'))
 
     if ensemble_paths:
         if isinstance(ensemble_paths, (list, tuple)):
