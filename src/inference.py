@@ -77,25 +77,44 @@ def load_single_model(checkpoint_path, device):
 def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft_gating=True):
     """
     Computes ensemble-averaged, classification-gated probability maps for a batch of images.
-    Supports single or multiple models, horizontal TTA, and smooth soft quadratic gating.
+    Supports single or multiple models, 4-way TTA (Orig, H-Flip, V-Flip, Both), and soft quadratic gating.
     """
     if not isinstance(models, (list, tuple)):
         models = [models]
 
     model_probs = []
-    images_hflip = torch.flip(images, dims=[3]) if use_tta else None
+
+    if use_tta:
+        img_orig = images
+        img_h = torch.flip(images, dims=[3])
+        img_v = torch.flip(images, dims=[2])
+        img_hv = torch.flip(images, dims=[2, 3])
 
     for model in models:
         with_cls = getattr(model, 'with_classifier', False)
         if use_tta:
-            out1 = model(images, return_cls=True) if with_cls else model(images)
-            out2 = model(images_hflip, return_cls=True) if with_cls else model(images_hflip)
+            out1 = model(img_orig, return_cls=True) if with_cls else model(img_orig)
+            out2 = model(img_h, return_cls=True) if with_cls else model(img_h)
+            out3 = model(img_v, return_cls=True) if with_cls else model(img_v)
+            out4 = model(img_hv, return_cls=True) if with_cls else model(img_hv)
 
             if isinstance(out1, (tuple, list)):
                 m1, c1 = out1
                 m2, c2 = out2
-                mask_p = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
-                cls_p = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
+                m3, c3 = out3
+                m4, c4 = out4
+
+                m1_p = torch.sigmoid(m1)
+                m2_p = torch.flip(torch.sigmoid(m2), dims=[3])
+                m3_p = torch.flip(torch.sigmoid(m3), dims=[2])
+                m4_p = torch.flip(torch.sigmoid(m4), dims=[2, 3])
+                mask_p = 0.25 * (m1_p + m2_p + m3_p + m4_p)
+
+                c1_p = torch.sigmoid(c1)
+                c2_p = torch.sigmoid(c2)
+                c3_p = torch.sigmoid(c3)
+                c4_p = torch.sigmoid(c4)
+                cls_p = 0.25 * (c1_p + c2_p + c3_p + c4_p)
                 cls_p_4d = cls_p.unsqueeze(-1).unsqueeze(-1)
 
                 if cls_gate_tensor is not None:
@@ -109,7 +128,11 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                 else:
                     p = mask_p
             else:
-                p = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
+                m1_p = torch.sigmoid(out1)
+                m2_p = torch.flip(torch.sigmoid(out2), dims=[3])
+                m3_p = torch.flip(torch.sigmoid(out3), dims=[2])
+                m4_p = torch.flip(torch.sigmoid(out4), dims=[2, 3])
+                p = 0.25 * (m1_p + m2_p + m3_p + m4_p)
         else:
             out = model(images, return_cls=True) if with_cls else model(images)
             if isinstance(out, (tuple, list)):
