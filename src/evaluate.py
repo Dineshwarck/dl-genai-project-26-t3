@@ -14,7 +14,12 @@ from src.dataset import SurfaceDefectDataset, get_stratified_split, DEFECT_CLASS
 from src.model import ScratchUNet
 from src.metrics import post_process_mask, compute_competition_metrics, CLASS_THRESHOLDS, MIN_AREAS, MAX_AREAS
 from src.utils import mask_to_rle, rle_to_mask
-from src.inference import fetch_model_from_wandb
+from src.inference import (
+    fetch_model_from_wandb,
+    load_single_model,
+    predict_batch_probs,
+    DEFAULT_CLS_GATES,
+)
 
 
 def evaluate_validation_set(
@@ -29,6 +34,9 @@ def evaluate_validation_set(
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,
     max_areas=MAX_AREAS,
+    cls_gates=DEFAULT_CLS_GATES,
+    soft_gating=True,
+    ensemble_paths=None,
     filter_geometry=True,
     use_tta=True,
     sample_limit=None,
@@ -41,13 +49,20 @@ def evaluate_validation_set(
     Args:
         data_csv: Path to train.csv containing annotations.
         image_dir: Path to directory containing train images.
-        checkpoint_path: Path to model checkpoint file (.pth).
+        checkpoint_path: Path to model checkpoint file (.pth) or list of checkpoints.
         wandb_artifact: W&B model artifact name to fetch if checkpoint_path doesn't exist.
         output_csv: Path to save the detailed validation predictions CSV.
         val_size: Validation holdout proportion (default 0.20).
         random_state: Stratification random seed (default 42).
         batch_size: Batch size for inference.
         threshold: Decision threshold (float or dict/list per defect class).
+        min_areas: Minimum connected component area thresholds.
+        max_areas: Maximum connected component area ceilings.
+        cls_gates: Per-class classifier gating thresholds.
+        soft_gating: If True, uses smooth quadratic attenuation instead of binary cliff.
+        ensemble_paths: Optional list of additional checkpoint paths to ensemble.
+        filter_geometry: If True, applies vertical aspect ratio filters for scratches.
+        use_tta: If True, applies horizontal flip test-time augmentation.
         sample_limit: Optional limit on validation images for fast dry-runs.
         device: 'cuda' or 'cpu' (auto-detected if None).
 
@@ -59,13 +74,23 @@ def evaluate_validation_set(
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running validation evaluation on device: {device}")
 
-    # 1. Resolve Checkpoint
-    if checkpoint_path and os.path.exists(checkpoint_path):
-        print(f"Using local checkpoint: {checkpoint_path}")
+    # 1. Resolve Checkpoints (Supports single or ensemble list)
+    model_paths = []
+    if checkpoint_path:
+        if isinstance(checkpoint_path, (list, tuple)):
+            model_paths.extend(checkpoint_path)
+        else:
+            model_paths.append(checkpoint_path)
     elif wandb_artifact:
-        checkpoint_path = fetch_model_from_wandb(artifact_name=wandb_artifact)
+        model_paths.append(fetch_model_from_wandb(artifact_name=wandb_artifact))
     else:
-        checkpoint_path = fetch_model_from_wandb(artifact_name='scratch-unet-best:latest')
+        model_paths.append('models/best_scratch_unet.pth')
+
+    if ensemble_paths:
+        if isinstance(ensemble_paths, (list, tuple)):
+            model_paths.extend(ensemble_paths)
+        else:
+            model_paths.append(ensemble_paths)
 
     # 2. Load Stratified Validation Split
     df = pd.read_csv(data_csv)
@@ -84,13 +109,8 @@ def evaluate_validation_set(
         num_workers=0 if os.name == 'nt' else 2,
     )
 
-    # 3. Load Trained Model
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
-    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
-    model.load_state_dict(state_dict, strict=False)
-    model.eval()
-    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls})")
+    # 3. Load Trained Models
+    models = [load_single_model(p, device) for p in model_paths]
 
     # 4. Setup Threshold Tensor
     if isinstance(threshold, (int, float)):
@@ -102,6 +122,16 @@ def evaluate_validation_set(
     else:
         th_tensor = torch.full((1, 4, 1, 1), 0.5, device=device)
 
+    # Setup per-channel classifier gate tensor
+    if isinstance(cls_gates, (int, float)):
+        cls_gate_tensor = torch.full((1, 4, 1, 1), float(cls_gates), device=device)
+    elif isinstance(cls_gates, dict):
+        cls_gate_tensor = torch.tensor([cls_gates.get(i, 0.35) for i in range(4)], device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    elif isinstance(cls_gates, (list, tuple)):
+        cls_gate_tensor = torch.tensor(cls_gates, device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    else:
+        cls_gate_tensor = None
+
     # 5. Evaluate Batches
     records = []
     all_preds_list = []
@@ -111,30 +141,13 @@ def evaluate_validation_set(
     with torch.no_grad():
         for images, masks in tqdm(val_loader, desc=f"Evaluating Validation Set{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
-            if use_tta:
-                out1 = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
-                images_hflip = torch.flip(images, dims=[3])
-                out2 = model(images_hflip, return_cls=True) if getattr(model, 'with_classifier', False) else model(images_hflip)
-
-                if isinstance(out1, (tuple, list)):
-                    m1, c1 = out1
-                    m2, c2 = out2
-                    mask_probs = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
-                    cls_probs = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
-                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
-                    probs = mask_probs * gate
-                else:
-                    probs = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
-            else:
-                out = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
-                if isinstance(out, (tuple, list)):
-                    m, c = out
-                    mask_probs = torch.sigmoid(m)
-                    cls_probs = torch.sigmoid(c)
-                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
-                    probs = mask_probs * gate
-                else:
-                    probs = torch.sigmoid(out)
+            probs = predict_batch_probs(
+                models,
+                images,
+                use_tta=use_tta,
+                cls_gate_tensor=cls_gate_tensor,
+                soft_gating=soft_gating,
+            )
 
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)
             probs_np = probs.cpu().numpy()
@@ -428,6 +441,9 @@ def find_optimal_thresholds(
     image_dir='data/train',
     checkpoint_path='models/best_scratch_unet.pth',
     wandb_artifact='scratch-unet-best:latest',
+    cls_gates=DEFAULT_CLS_GATES,
+    soft_gating=True,
+    ensemble_paths=None,
     val_size=0.20,
     random_state=42,
     batch_size=8,
@@ -451,13 +467,23 @@ def find_optimal_thresholds(
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running Validation Threshold Grid Search on device: {device} (TTA={use_tta})")
 
-    # 1. Resolve Checkpoint
-    if checkpoint_path and os.path.exists(checkpoint_path):
-        print(f"Using local checkpoint: {checkpoint_path}")
+    # 1. Resolve Checkpoints (Supports single or ensemble list)
+    model_paths = []
+    if checkpoint_path:
+        if isinstance(checkpoint_path, (list, tuple)):
+            model_paths.extend(checkpoint_path)
+        else:
+            model_paths.append(checkpoint_path)
     elif wandb_artifact:
-        checkpoint_path = fetch_model_from_wandb(artifact_name=wandb_artifact)
+        model_paths.append(fetch_model_from_wandb(artifact_name=wandb_artifact))
     else:
-        checkpoint_path = fetch_model_from_wandb(artifact_name='scratch-unet-best:latest')
+        model_paths.append('models/best_scratch_unet.pth')
+
+    if ensemble_paths:
+        if isinstance(ensemble_paths, (list, tuple)):
+            model_paths.extend(ensemble_paths)
+        else:
+            model_paths.append(ensemble_paths)
 
     # 2. Load Stratified Validation Split
     df = pd.read_csv(data_csv)
@@ -474,12 +500,17 @@ def find_optimal_thresholds(
         num_workers=0 if os.name == 'nt' else 2,
     )
 
-    # 3. Load Trained Model
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
-    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
-    model.load_state_dict(state_dict, strict=False)
-    model.eval()
+    # 3. Load Trained Models
+    models = [load_single_model(p, device) for p in model_paths]
+
+    if isinstance(cls_gates, (int, float)):
+        cls_gate_tensor = torch.full((1, 4, 1, 1), float(cls_gates), device=device)
+    elif isinstance(cls_gates, dict):
+        cls_gate_tensor = torch.tensor([cls_gates.get(i, 0.35) for i in range(4)], device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    elif isinstance(cls_gates, (list, tuple)):
+        cls_gate_tensor = torch.tensor(cls_gates, device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    else:
+        cls_gate_tensor = None
 
     # 4. Cache Raw Predictions and Targets (Stored in uint8/bool to minimize RAM)
     all_probs_uint8 = []
@@ -488,30 +519,13 @@ def find_optimal_thresholds(
     with torch.no_grad():
         for images, masks in tqdm(val_loader, desc=f"Caching Val Probabilities{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
-            if use_tta:
-                out1 = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
-                images_hflip = torch.flip(images, dims=[3])
-                out2 = model(images_hflip, return_cls=True) if getattr(model, 'with_classifier', False) else model(images_hflip)
-
-                if isinstance(out1, (tuple, list)):
-                    m1, c1 = out1
-                    m2, c2 = out2
-                    mask_probs = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
-                    cls_probs = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
-                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
-                    probs = mask_probs * gate
-                else:
-                    probs = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
-            else:
-                out = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
-                if isinstance(out, (tuple, list)):
-                    m, c = out
-                    mask_probs = torch.sigmoid(m)
-                    cls_probs = torch.sigmoid(c)
-                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
-                    probs = mask_probs * gate
-                else:
-                    probs = torch.sigmoid(out)
+            probs = predict_batch_probs(
+                models,
+                images,
+                use_tta=use_tta,
+                cls_gate_tensor=cls_gate_tensor,
+                soft_gating=soft_gating,
+            )
 
             # Store as uint8 (0-255) and bool to prevent high memory usage
             probs_uint8 = (probs.cpu() * 255.0).to(torch.uint8).numpy()

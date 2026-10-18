@@ -55,6 +55,86 @@ class TestDefectDataset(Dataset):
         image_tensor = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1) / 255.0
         return image_tensor, img_id
 
+DEFAULT_CLS_GATES = {
+    0: 0.25,  # defect_a: lower gate to preserve thin 1-pixel scratches
+    1: 0.20,  # defect_b: sensitive gate for rare edge cracks
+    2: 0.35,  # defect_c: standard gate to suppress background false alarms
+    3: 0.35,  # defect_d: standard gate
+}
+
+
+def load_single_model(checkpoint_path, device):
+    """Loads a ScratchUNet model checkpoint and auto-detects classifier head."""
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
+    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
+    model.load_state_dict(state_dict, strict=False)
+    model.eval()
+    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls})")
+    return model
+
+
+def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft_gating=True):
+    """
+    Computes ensemble-averaged, classification-gated probability maps for a batch of images.
+    Supports single or multiple models, horizontal TTA, and smooth soft quadratic gating.
+    """
+    if not isinstance(models, (list, tuple)):
+        models = [models]
+
+    model_probs = []
+    images_hflip = torch.flip(images, dims=[3]) if use_tta else None
+
+    for model in models:
+        with_cls = getattr(model, 'with_classifier', False)
+        if use_tta:
+            out1 = model(images, return_cls=True) if with_cls else model(images)
+            out2 = model(images_hflip, return_cls=True) if with_cls else model(images_hflip)
+
+            if isinstance(out1, (tuple, list)):
+                m1, c1 = out1
+                m2, c2 = out2
+                mask_p = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
+                cls_p = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
+                cls_p_4d = cls_p.unsqueeze(-1).unsqueeze(-1)
+
+                if cls_gate_tensor is not None:
+                    if soft_gating:
+                        # Smooth quadratic attenuation: 1.0 when confident, (p / gate)^2 when below
+                        ratio = torch.clamp(cls_p_4d / (cls_gate_tensor + 1e-7), max=1.0)
+                        gate = ratio ** 2
+                    else:
+                        gate = (cls_p_4d > cls_gate_tensor).float()
+                    p = mask_p * gate
+                else:
+                    p = mask_p
+            else:
+                p = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
+        else:
+            out = model(images, return_cls=True) if with_cls else model(images)
+            if isinstance(out, (tuple, list)):
+                m, c = out
+                mask_p = torch.sigmoid(m)
+                cls_p = torch.sigmoid(c)
+                cls_p_4d = cls_p.unsqueeze(-1).unsqueeze(-1)
+
+                if cls_gate_tensor is not None:
+                    if soft_gating:
+                        ratio = torch.clamp(cls_p_4d / (cls_gate_tensor + 1e-7), max=1.0)
+                        gate = ratio ** 2
+                    else:
+                        gate = (cls_p_4d > cls_gate_tensor).float()
+                    p = mask_p * gate
+                else:
+                    p = mask_p
+            else:
+                p = torch.sigmoid(out)
+
+        model_probs.append(p)
+
+    return torch.stack(model_probs, dim=0).mean(dim=0)
+
+
 def generate_submission(
     sample_sub_csv='data/sample_submission.csv',
     test_image_dir='data/test',
@@ -64,6 +144,9 @@ def generate_submission(
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,
     max_areas=MAX_AREAS,
+    cls_gates=DEFAULT_CLS_GATES,
+    soft_gating=True,
+    ensemble_paths=None,
     filter_geometry=True,
     use_tta=True,
     batch_size=8,
@@ -74,20 +157,29 @@ def generate_submission(
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Running inference on device: {device}")
 
-    # --- 1. Resolve Checkpoint from W&B or Local ---
-    if checkpoint_path and os.path.exists(checkpoint_path):
-        print(f"Using local checkpoint: {checkpoint_path}")
+    # 1. Resolve Model Checkpoints (Supports single or ensemble list)
+    model_paths = []
+    if checkpoint_path:
+        if isinstance(checkpoint_path, (list, tuple)):
+            model_paths.extend(checkpoint_path)
+        else:
+            model_paths.append(checkpoint_path)
     elif wandb_artifact:
-        checkpoint_path = fetch_model_from_wandb(artifact_name=wandb_artifact)
+        model_paths.append(fetch_model_from_wandb(artifact_name=wandb_artifact))
     else:
-        checkpoint_path = fetch_model_from_wandb(artifact_name='scratch-unet-best:latest')
+        model_paths.append('models/best_scratch_unet.pth')
+
+    if ensemble_paths:
+        if isinstance(ensemble_paths, (list, tuple)):
+            model_paths.extend(ensemble_paths)
+        else:
+            model_paths.append(ensemble_paths)
 
     # 2. Load Submission Template
     sub_df = pd.read_csv(sample_sub_csv)
     unique_image_ids = sub_df['image_id'].unique()
     print(f"Total test images to predict: {len(unique_image_ids)}")
 
-    # Apply fast testing sample limit if specified
     if sample_limit is not None:
         unique_image_ids = unique_image_ids[:sample_limit]
         sub_df = sub_df[sub_df['image_id'].isin(unique_image_ids)].copy()
@@ -98,13 +190,8 @@ def generate_submission(
     test_dataset = TestDefectDataset(unique_image_ids, test_image_dir)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    # 4. Load Trained Model
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
-    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
-    model.load_state_dict(state_dict, strict=False)
-    model.eval()
-    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls})")
+    # 4. Load Models
+    models = [load_single_model(p, device) for p in model_paths]
 
     # Setup per-channel threshold tensor
     if isinstance(threshold, (int, float)):
@@ -116,36 +203,29 @@ def generate_submission(
     else:
         th_tensor = torch.full((1, 4, 1, 1), 0.5, device=device)
 
+    # Setup per-channel classifier gate tensor
+    if isinstance(cls_gates, (int, float)):
+        cls_gate_tensor = torch.full((1, 4, 1, 1), float(cls_gates), device=device)
+    elif isinstance(cls_gates, dict):
+        cls_gate_tensor = torch.tensor([cls_gates.get(i, 0.35) for i in range(4)], device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    elif isinstance(cls_gates, (list, tuple)):
+        cls_gate_tensor = torch.tensor(cls_gates, device=device, dtype=torch.float32).view(1, 4, 1, 1)
+    else:
+        cls_gate_tensor = None
+
     # 5. Predict & Post-process
     predictions = {}  # Map (image_id, defect_type) -> rle_string
 
     with torch.no_grad():
         for images, img_ids in tqdm(test_loader, desc=f"Generating Predictions{' (with TTA)' if use_tta else ''}"):
             images = images.to(device)
-            if use_tta:
-                out1 = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
-                images_hflip = torch.flip(images, dims=[3])
-                out2 = model(images_hflip, return_cls=True) if getattr(model, 'with_classifier', False) else model(images_hflip)
-
-                if isinstance(out1, (tuple, list)):
-                    m1, c1 = out1
-                    m2, c2 = out2
-                    mask_probs = 0.5 * (torch.sigmoid(m1) + torch.flip(torch.sigmoid(m2), dims=[3]))
-                    cls_probs = 0.5 * (torch.sigmoid(c1) + torch.sigmoid(c2))
-                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
-                    probs = mask_probs * gate
-                else:
-                    probs = 0.5 * (torch.sigmoid(out1) + torch.flip(torch.sigmoid(out2), dims=[3]))
-            else:
-                out = model(images, return_cls=True) if getattr(model, 'with_classifier', False) else model(images)
-                if isinstance(out, (tuple, list)):
-                    m, c = out
-                    mask_probs = torch.sigmoid(m)
-                    cls_probs = torch.sigmoid(c)
-                    gate = (cls_probs > 0.40).unsqueeze(-1).unsqueeze(-1).float()
-                    probs = mask_probs * gate
-                else:
-                    probs = torch.sigmoid(out)
+            probs = predict_batch_probs(
+                models,
+                images,
+                use_tta=use_tta,
+                cls_gate_tensor=cls_gate_tensor,
+                soft_gating=soft_gating,
+            )
 
             preds_bin = (probs > th_tensor).cpu().numpy().astype(np.uint8)  # (B, 4, 128, 800)
 
