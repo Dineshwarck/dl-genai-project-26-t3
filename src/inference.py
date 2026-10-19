@@ -122,6 +122,8 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                         # Smooth quadratic attenuation: 1.0 when confident, (p / gate)^2 when below
                         ratio = torch.clamp(cls_p_4d / (cls_gate_tensor + 1e-7), max=1.0)
                         gate = ratio ** 2
+                        # Absolute silence floor on highly confident clean steel (< 0.10) to protect metric cliff
+                        gate = torch.where(cls_p_4d < 0.10, torch.zeros_like(gate), gate)
                     else:
                         gate = (cls_p_4d > cls_gate_tensor).float()
                     p = mask_p * gate
@@ -145,6 +147,7 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                     if soft_gating:
                         ratio = torch.clamp(cls_p_4d / (cls_gate_tensor + 1e-7), max=1.0)
                         gate = ratio ** 2
+                        gate = torch.where(cls_p_4d < 0.10, torch.zeros_like(gate), gate)
                     else:
                         gate = (cls_p_4d > cls_gate_tensor).float()
                     p = mask_p * gate
