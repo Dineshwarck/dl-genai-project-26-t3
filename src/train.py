@@ -66,6 +66,8 @@ def train_model(
     channel_weights=(1.5, 2.5, 1.0, 1.2),
     soft_gating=True,
     cls_gates=None,
+    with_attention=False,
+    initial_best_score=None,
     sample_limit=None,
     num_workers=None,
     wandb_artifact='scratch-unet-best:latest',
@@ -120,7 +122,7 @@ def train_model(
      )
 
      # 5. Model (4 Output Channels), Focal+Dice ComboLoss & Optimizer
-     model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3).to(device)
+     model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3, with_attention=with_attention).to(device)
 
      # Optional resume checkpoint (local or W&B)
      if resume_from is not None:
@@ -194,7 +196,7 @@ def train_model(
      cls_gate_tensor = torch.tensor([cls_gates[c] for c in range(4)], device=device).view(1, 4, 1, 1)
 
      os.makedirs('models', exist_ok=True)
-     best_score = -1.0
+     best_score = initial_best_score if initial_best_score is not None else -1.0
 
      # 6. Training & Validation Loop
      for epoch in range(epochs):

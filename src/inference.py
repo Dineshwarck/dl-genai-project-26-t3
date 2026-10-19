@@ -64,13 +64,14 @@ DEFAULT_CLS_GATES = {
 
 
 def load_single_model(checkpoint_path, device):
-    """Loads a ScratchUNet model checkpoint and auto-detects classifier head."""
+    """Loads a ScratchUNet model checkpoint and auto-detects classifier head and attention blocks."""
     state_dict = torch.load(checkpoint_path, map_location=device)
     has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
-    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls).to(device)
+    has_att = any(k.startswith('att') for k in state_dict.keys())
+    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls, with_attention=has_att).to(device)
     model.load_state_dict(state_dict, strict=False)
     model.eval()
-    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls})")
+    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls}, with_attention={has_att})")
     return model
 
 
@@ -108,13 +109,16 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                 m2_p = torch.flip(torch.sigmoid(m2), dims=[3])
                 m3_p = torch.flip(torch.sigmoid(m3), dims=[2])
                 m4_p = torch.flip(torch.sigmoid(m4), dims=[2, 3])
-                mask_p = 0.25 * (m1_p + m2_p + m3_p + m4_p)
+                # Physics-weighted 4-way TTA:
+                # Original (0.40) and Horizontal-Flip (0.30) preserve steel rolling grain & illumination.
+                # Vertical flips (0.15 each) provide structural regularization.
+                mask_p = 0.40 * m1_p + 0.30 * m2_p + 0.15 * m3_p + 0.15 * m4_p
 
                 c1_p = torch.sigmoid(c1)
                 c2_p = torch.sigmoid(c2)
                 c3_p = torch.sigmoid(c3)
                 c4_p = torch.sigmoid(c4)
-                cls_p = 0.25 * (c1_p + c2_p + c3_p + c4_p)
+                cls_p = 0.40 * c1_p + 0.30 * c2_p + 0.15 * c3_p + 0.15 * c4_p
                 cls_p_4d = cls_p.unsqueeze(-1).unsqueeze(-1)
 
                 if cls_gate_tensor is not None:
@@ -122,8 +126,6 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                         # Smooth quadratic attenuation: 1.0 when confident, (p / gate)^2 when below
                         ratio = torch.clamp(cls_p_4d / (cls_gate_tensor + 1e-7), max=1.0)
                         gate = ratio ** 2
-                        # Absolute silence floor on highly confident clean steel (< 0.10) to protect metric cliff
-                        gate = torch.where(cls_p_4d < 0.10, torch.zeros_like(gate), gate)
                     else:
                         gate = (cls_p_4d > cls_gate_tensor).float()
                     p = mask_p * gate
@@ -134,7 +136,7 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                 m2_p = torch.flip(torch.sigmoid(out2), dims=[3])
                 m3_p = torch.flip(torch.sigmoid(out3), dims=[2])
                 m4_p = torch.flip(torch.sigmoid(out4), dims=[2, 3])
-                p = 0.25 * (m1_p + m2_p + m3_p + m4_p)
+                p = 0.40 * m1_p + 0.30 * m2_p + 0.15 * m3_p + 0.15 * m4_p
         else:
             out = model(images, return_cls=True) if with_cls else model(images)
             if isinstance(out, (tuple, list)):
@@ -147,7 +149,6 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                     if soft_gating:
                         ratio = torch.clamp(cls_p_4d / (cls_gate_tensor + 1e-7), max=1.0)
                         gate = ratio ** 2
-                        gate = torch.where(cls_p_4d < 0.10, torch.zeros_like(gate), gate)
                     else:
                         gate = (cls_p_4d > cls_gate_tensor).float()
                     p = mask_p * gate
