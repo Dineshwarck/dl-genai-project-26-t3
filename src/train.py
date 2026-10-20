@@ -68,6 +68,8 @@ def train_model(
     cls_gates=None,
     with_attention=False,
     initial_best_score=None,
+    use_amp=True,
+    wandb_run_name='scratch-unet-multilabel',
     sample_limit=None,
     num_workers=None,
     wandb_artifact='scratch-unet-best:latest',
@@ -83,7 +85,7 @@ def train_model(
          num_workers = 2 if (torch.cuda.is_available() and os.name != 'nt') else 0
 
      # 2. Initialize Weights & Biases
-     wandb.init(project='24F2004781-t32026', name='scratch-unet-multilabel')
+     wandb.init(project='24F2004781-t32026', name=wandb_run_name)
 
      # 3. Load Data & Stratified 80/20 split
      df = pd.read_csv(data_csv)
@@ -154,6 +156,7 @@ def train_model(
          channel_weights=channel_weights,
      )
      optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+     scaler = torch.amp.GradScaler('cuda', enabled=(device == "cuda" and use_amp))
 
      # Dynamic Learning Rate Scheduler Configuration
      sched_type = str(scheduler_type).lower()
@@ -208,17 +211,21 @@ def train_model(
             images, masks = images.to(device), masks.to(device)
 
             optimizer.zero_grad()
-            mask_logits, cls_logits = model(images, return_cls=True)
-            mask_loss = criterion(mask_logits, masks)
+            with torch.amp.autocast('cuda', enabled=(device == "cuda" and use_amp)):
+                mask_logits, cls_logits = model(images, return_cls=True)
+                mask_loss = criterion(mask_logits, masks)
 
-            # Image-level target: 1.0 if class exists in the image, else 0.0
-            cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
-            cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+                # Image-level target: 1.0 if class exists in the image, else 0.0
+                cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
+                cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+                total_loss = mask_loss + 0.3 * cls_loss
 
-            total_loss = mask_loss + 0.3 * cls_loss
-            total_loss.backward()
+            scaler.scale(total_loss).backward()
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
+
             if is_step_per_batch:
                 scheduler.step()
 
@@ -233,27 +240,28 @@ def train_model(
         all_targets = []
 
         with torch.no_grad():
-            for images, masks in tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]"):
-                images, masks = images.to(device), masks.to(device)
-                mask_logits, cls_logits = model(images, return_cls=True)
-                mask_loss = criterion(mask_logits, masks)
+            with torch.amp.autocast('cuda', enabled=(device == "cuda" and use_amp)):
+                for images, masks in tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]"):
+                    images, masks = images.to(device), masks.to(device)
+                    mask_logits, cls_logits = model(images, return_cls=True)
+                    mask_loss = criterion(mask_logits, masks)
 
-                cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
-                cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
-                total_val_loss = mask_loss + 0.3 * cls_loss
-                val_loss += total_val_loss.item()
+                    cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
+                    cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+                    total_val_loss = mask_loss + 0.3 * cls_loss
+                    val_loss += total_val_loss.item()
 
-                # Multi-Task Gating: Soft quadratic modulation or hard suppression
-                mask_probs = torch.sigmoid(mask_logits)
-                cls_probs = torch.sigmoid(cls_logits).unsqueeze(-1).unsqueeze(-1)
-                if soft_gating:
-                    ratio = torch.clamp(cls_probs / (cls_gate_tensor + 1e-7), max=1.0)
-                    gated_probs = mask_probs * (ratio ** 2)
-                else:
-                    gated_probs = mask_probs * (cls_probs > cls_gate_tensor).float()
+                    # Multi-Task Gating: Soft quadratic modulation or hard suppression
+                    mask_probs = torch.sigmoid(mask_logits)
+                    cls_probs = torch.sigmoid(cls_logits).unsqueeze(-1).unsqueeze(-1)
+                    if soft_gating:
+                        ratio = torch.clamp(cls_probs / (cls_gate_tensor + 1e-7), max=1.0)
+                        gated_probs = mask_probs * (ratio ** 2)
+                    else:
+                        gated_probs = mask_probs * (cls_probs > cls_gate_tensor).float()
 
-                all_preds.append(gated_probs.cpu())
-                all_targets.append(masks.cpu())
+                    all_preds.append(gated_probs.cpu())
+                    all_targets.append(masks.cpu())
         
         avg_val_loss = val_loss / len(val_loader)   
 
@@ -324,6 +332,53 @@ def train_model(
     
      print('Training Complete!')
      wandb.finish()
-    
+
+
+def fine_tune_model(
+    data_csv=r'data/train.csv',
+    image_dir=r'data/train',
+    checkpoint_path='models/best_scratch_unet.pth',
+    wandb_artifact='scratch-unet-best:latest',
+    epochs=5,
+    lr=4e-5,
+    batch_size=8,
+    channel_weights=(2.0, 4.0, 1.0, 1.2),  # Boost rare defect_a (2.0) and defect_b (4.0)
+    scheduler_type='cosine',
+    initial_best_score=0.6990,              # Safety lock: only save if score strictly beats 0.6990
+    use_amp=True,
+    sample_limit=None,
+    num_workers=None,
+    **kwargs,
+):
+    """
+    Fine-tunes the best trained ScratchUNet checkpoint with a gentle learning rate,
+    rebalanced loss weights for rare defects, and cosine annealing schedule.
+    Safe by construction: only overwrites the checkpoint if score strictly beats initial_best_score.
+    """
+    print("=" * 70)
+    print("       STARTING SCRATCH U-NET FINE-TUNING PIPELINE")
+    print(f"Target Epochs: {epochs} | LR: {lr} | Schedule: {scheduler_type}")
+    print(f"Channel Weights: {channel_weights} (Defect A=2.0, Defect B=4.0)")
+    print(f"Baseline Score Threshold: {initial_best_score}")
+    print("=" * 70)
+    return train_model(
+        data_csv=data_csv,
+        image_dir=image_dir,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        scheduler_type=scheduler_type,
+        resume_from=checkpoint_path,
+        channel_weights=channel_weights,
+        initial_best_score=initial_best_score,
+        wandb_artifact=wandb_artifact,
+        wandb_run_name='scratch-unet-finetune',
+        use_amp=use_amp,
+        sample_limit=sample_limit,
+        num_workers=num_workers,
+        **kwargs,
+    )
+
+
 if __name__ == '__main__':
     train_model()        

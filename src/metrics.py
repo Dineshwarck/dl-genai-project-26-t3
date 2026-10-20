@@ -13,9 +13,9 @@ import torch
 # Empirically validated optimal minimum connected component areas (Validation Score: 0.6836)
 MIN_AREAS = {
     0: 50,   # defect_a: captures fine scratches without noise
-    1: 200,  # defect_b: captures edge cracks
-    2: 400,  # defect_c: captures smaller scabs/pitting (previously lost at 800 px)
-    3: 600,  # defect_d: captures texture patches (previously lost at 1200 px)
+    1: 120,  # defect_b: captures genuine edge cracks (starting at 93 px, previously discarded at 200 px)
+    2: 320,  # defect_c: captures genuine scabs/pitting (previously discarded at 400 px)
+    3: 500,  # defect_d: captures genuine texture patches (previously discarded at 600 px)
 }
 
 # Empirically validated optimal decision thresholds
