@@ -109,16 +109,14 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                 m2_p = torch.flip(torch.sigmoid(m2), dims=[3])
                 m3_p = torch.flip(torch.sigmoid(m3), dims=[2])
                 m4_p = torch.flip(torch.sigmoid(m4), dims=[2, 3])
-                # Physics-weighted 4-way TTA:
-                # Original (0.40) and Horizontal-Flip (0.30) preserve steel rolling grain & illumination.
-                # Vertical flips (0.15 each) provide structural regularization.
-                mask_p = 0.40 * m1_p + 0.30 * m2_p + 0.15 * m3_p + 0.15 * m4_p
+                # 4-way TTA with equal weighting (0.25 each) for maximum variance reduction:
+                mask_p = 0.25 * (m1_p + m2_p + m3_p + m4_p)
 
                 c1_p = torch.sigmoid(c1)
                 c2_p = torch.sigmoid(c2)
                 c3_p = torch.sigmoid(c3)
                 c4_p = torch.sigmoid(c4)
-                cls_p = 0.40 * c1_p + 0.30 * c2_p + 0.15 * c3_p + 0.15 * c4_p
+                cls_p = 0.25 * (c1_p + c2_p + c3_p + c4_p)
                 cls_p_4d = cls_p.unsqueeze(-1).unsqueeze(-1)
 
                 if cls_gate_tensor is not None:
@@ -136,7 +134,7 @@ def predict_batch_probs(models, images, use_tta=True, cls_gate_tensor=None, soft
                 m2_p = torch.flip(torch.sigmoid(out2), dims=[3])
                 m3_p = torch.flip(torch.sigmoid(out3), dims=[2])
                 m4_p = torch.flip(torch.sigmoid(out4), dims=[2, 3])
-                p = 0.40 * m1_p + 0.30 * m2_p + 0.15 * m3_p + 0.15 * m4_p
+                p = 0.25 * (m1_p + m2_p + m3_p + m4_p)
         else:
             out = model(images, return_cls=True) if with_cls else model(images)
             if isinstance(out, (tuple, list)):

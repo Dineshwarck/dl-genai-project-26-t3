@@ -57,13 +57,8 @@ def post_process_mask(
             continue
 
         if use_closing:
-            # Directional morphological closing tailored to defect physics:
-            # Defect A & B: Longitudinal scratches & edge tears along vertical rolling grain -> (1, 5) vertical rect
-            # Defect C & D: Surface scabs & patches -> (3, 3) isotropic rect
-            if cls_idx in (0, 1):
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
-            else:
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            # Connect adjacent clusters separated by 1-2 pixels and fill internal holes in all 8 directions
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
             channel = cv2.morphologyEx(channel, cv2.MORPH_CLOSE, kernel)
 
         total_pixels = int(channel.sum())
