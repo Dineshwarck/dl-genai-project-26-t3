@@ -14,7 +14,7 @@ import wandb
 from src.dataset import SurfaceDefectDataset, get_stratified_split, get_defect_aware_sampler
 from src.losses import ComboLoss
 from src.metrics import compute_competition_metrics, CLASS_THRESHOLDS
-from src.model import ScratchUNet
+from src.model import ScratchUNet, ResAttentionUNet
 from src.inference import fetch_model_from_wandb, DEFAULT_CLS_GATES
 
 
@@ -57,6 +57,8 @@ def train_model(
     lr=3e-4,
     scheduler_type='onecycle',
     resume_from=None,
+    model_architecture='scratch_unet',
+    deep_supervision=False,
     use_sampler=True,
     balanced_sampler=None,
     use_focal=True,
@@ -72,7 +74,7 @@ def train_model(
     wandb_run_name='scratch-unet-multilabel',
     sample_limit=None,
     num_workers=None,
-    wandb_artifact='scratch-unet-best:latest',
+    wandb_artifact='scratch-unet-best:v64',
 ):
      if balanced_sampler is not None:
          use_sampler = balanced_sampler
@@ -124,7 +126,12 @@ def train_model(
      )
 
      # 5. Model (4 Output Channels), Focal+Dice ComboLoss & Optimizer
-     model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3, with_attention=with_attention).to(device)
+     if str(model_architecture).lower() in ('res_attention_unet', 'resattentionunet', 'resattunet'):
+         model = ResAttentionUNet(in_channels=3, out_channels=4, deep_supervision=deep_supervision).to(device)
+         print(f"Instantiated ResAttentionUNet (scSE Residual Blocks, ASPP Bottleneck, Attention Gates, DeepSupervision={deep_supervision})")
+     else:
+         model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3, with_attention=with_attention).to(device)
+         print(f"Instantiated ScratchUNet (with_attention={with_attention})")
 
      # Optional resume checkpoint (local or W&B)
      if resume_from is not None:
@@ -212,13 +219,20 @@ def train_model(
 
             optimizer.zero_grad()
             with torch.amp.autocast('cuda', enabled=(device == "cuda" and use_amp)):
-                mask_logits, cls_logits = model(images, return_cls=True)
-                mask_loss = criterion(mask_logits, masks)
-
-                # Image-level target: 1.0 if class exists in the image, else 0.0
-                cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
-                cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
-                total_loss = mask_loss + 0.3 * cls_loss
+                out = model(images) if getattr(model, 'deep_supervision', False) else model(images, return_cls=True)
+                if isinstance(out, tuple) and len(out) == 4:
+                    mask_logits, cls_logits, ds3_out, ds2_out = out
+                    mask_loss = criterion(mask_logits, masks)
+                    ds_loss = 0.2 * criterion(ds3_out, masks) + 0.2 * criterion(ds2_out, masks)
+                    cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
+                    cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+                    total_loss = mask_loss + 0.3 * cls_loss + ds_loss
+                else:
+                    mask_logits, cls_logits = out
+                    mask_loss = criterion(mask_logits, masks)
+                    cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
+                    cls_loss = torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_targets)
+                    total_loss = mask_loss + 0.3 * cls_loss
 
             scaler.scale(total_loss).backward()
             scaler.unscale_(optimizer)

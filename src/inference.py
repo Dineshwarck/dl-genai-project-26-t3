@@ -5,14 +5,14 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-from src.model import ScratchUNet
+from src.model import ScratchUNet, ResAttentionUNet
 from src.metrics import post_process_mask, CLASS_THRESHOLDS, MIN_AREAS, MAX_AREAS
 from src.utils import mask_to_rle
 import wandb
 
 def fetch_model_from_wandb(
     project='24F2004781-t32026',
-    artifact_name='scratch-unet-best:latest',
+    artifact_name='scratch-unet-best:v64',
     target_dir='models'
 ):
     """
@@ -58,20 +58,29 @@ class TestDefectDataset(Dataset):
 DEFAULT_CLS_GATES = {
     0: 0.25,  # defect_a: lower gate to preserve thin 1-pixel scratches
     1: 0.20,  # defect_b: sensitive gate for rare edge cracks
-    2: 0.35,  # defect_c: standard gate to suppress background false alarms
-    3: 0.35,  # defect_d: standard gate
+    2: 0.38,  # defect_c: tighter gate to eliminate clean steel rolling texture false alarms
+    3: 0.38,  # defect_d: tighter gate to eliminate clean steel shadow false alarms
 }
 
 
 def load_single_model(checkpoint_path, device):
-    """Loads a ScratchUNet model checkpoint and auto-detects classifier head and attention blocks."""
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
-    has_att = any(k.startswith('att') for k in state_dict.keys())
-    model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls, with_attention=has_att).to(device)
+    """Loads a ScratchUNet or ResAttentionUNet model checkpoint and auto-detects architecture."""
+    ckpt = torch.load(checkpoint_path, map_location=device)
+    state_dict = ckpt['state_dict'] if isinstance(ckpt, dict) and 'state_dict' in ckpt else ckpt
+    state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+
+    is_res_att = any('scse' in k or 'b0' in k for k in state_dict.keys())
+    if is_res_att:
+        has_ds = any(k.startswith('ds') for k in state_dict.keys())
+        model = ResAttentionUNet(in_channels=3, out_channels=4, deep_supervision=has_ds).to(device)
+    else:
+        has_cls = any(k.startswith('cls_head') for k in state_dict.keys())
+        has_att = any(k.startswith('att') for k in state_dict.keys())
+        model = ScratchUNet(in_channels=3, out_channels=4, with_classifier=has_cls, with_attention=has_att).to(device)
+
     model.load_state_dict(state_dict, strict=False)
     model.eval()
-    print(f"Loaded weights from {checkpoint_path} (with_classifier={has_cls}, with_attention={has_att})")
+    print(f"Loaded weights from {checkpoint_path} (Model: {model.__class__.__name__})")
     return model
 
 
@@ -164,7 +173,7 @@ def generate_submission(
     sample_sub_csv='data/sample_submission.csv',
     test_image_dir='data/test',
     checkpoint_path=None,
-    wandb_artifact='scratch-unet-best:latest',
+    wandb_artifact='scratch-unet-best:v64',
     output_csv='submission.csv',
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,

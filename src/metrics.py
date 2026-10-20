@@ -19,11 +19,12 @@ MIN_AREAS = {
 }
 
 # Empirically validated optimal decision thresholds
+# Defect C and D tightened from 0.30 to 0.33 to eliminate clean steel false alarms while preserving true defects
 CLASS_THRESHOLDS = {
     0: 0.35,  # defect_a
     1: 0.30,  # defect_b
-    2: 0.30,  # defect_c
-    3: 0.30,  # defect_d
+    2: 0.33,  # defect_c
+    3: 0.33,  # defect_d
 }
 
 # Maximum area ceilings to eliminate whole-sheet false alarms (e.g. 49k shadow hallucinations)
