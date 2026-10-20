@@ -58,8 +58,8 @@ class TestDefectDataset(Dataset):
 DEFAULT_CLS_GATES = {
     0: 0.25,  # defect_a: lower gate to preserve thin 1-pixel scratches
     1: 0.20,  # defect_b: sensitive gate for rare edge cracks
-    2: 0.38,  # defect_c: tighter gate to eliminate clean steel rolling texture false alarms
-    3: 0.38,  # defect_d: tighter gate to eliminate clean steel shadow false alarms
+    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel
+    3: 0.35,  # defect_d: canonical gate
 }
 
 
