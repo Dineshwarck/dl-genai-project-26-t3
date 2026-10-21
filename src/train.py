@@ -250,11 +250,16 @@ def train_model(
         
         avg_train_loss = train_loss / len(train_loader)
 
-        # --- Validation Phase ----
+        # --- Validation Phase (Memory-Optimized Streaming) ---
         model.eval()
         val_loss = 0.0
-        all_preds = []
-        all_targets = []
+        val_intersections = []
+        val_pred_sums = []
+        val_gt_sums = []
+
+        th_eval_tensor = torch.tensor(
+            [CLASS_THRESHOLDS.get(c, 0.30) for c in range(4)], device=device
+        ).view(1, 4, 1, 1)
 
         with torch.no_grad():
             with torch.amp.autocast('cuda', enabled=(device == "cuda" and use_amp)):
@@ -277,16 +282,56 @@ def train_model(
                     else:
                         gated_probs = mask_probs * (cls_probs > cls_gate_tensor).float()
 
-                    all_preds.append(gated_probs.cpu())
-                    all_targets.append(masks.cpu())
-        
-        avg_val_loss = val_loss / len(val_loader)   
+                    # Stream binary metrics per batch without accumulating gigabytes in RAM:
+                    preds_bin = (gated_probs > th_eval_tensor).float()
+                    preds_flat = preds_bin.flatten(2)  # (B, 4, H*W)
+                    masks_flat = masks.flatten(2)      # (B, 4, H*W)
 
+                    inter = (preds_flat * masks_flat).sum(dim=2).cpu()  # (B, 4)
+                    p_sum = preds_flat.sum(dim=2).cpu()                 # (B, 4)
+                    g_sum = masks_flat.sum(dim=2).cpu()                 # (B, 4)
 
-        # --- OFFICIAL METRIC EVALUATION ---
-        all_preds_tensor = torch.cat(all_preds, dim=0)
-        all_targets_tensor = torch.cat(all_targets, dim=0)
-        metrics = compute_competition_metrics(all_preds_tensor, all_targets_tensor, threshold=CLASS_THRESHOLDS)
+                    val_intersections.append(inter)
+                    val_pred_sums.append(p_sum)
+                    val_gt_sums.append(g_sum)
+
+        avg_val_loss = val_loss / len(val_loader)
+
+        # Compute official metrics on compact summary vectors (only ~36 KB total!)
+        all_inter = torch.cat(val_intersections, dim=0).flatten()
+        all_psum = torch.cat(val_pred_sums, dim=0).flatten()
+        all_gsum = torch.cat(val_gt_sums, dim=0).flatten()
+
+        pos_mask = all_gsum > 0
+        neg_mask = ~pos_mask
+
+        # 1. Foreground Dice strictly across positive pairs
+        foreground_dice = 0.0
+        if pos_mask.any():
+            dice_pos = (2.0 * all_inter[pos_mask]) / (all_psum[pos_mask] + all_gsum[pos_mask] + 1e-7)
+            foreground_dice = dice_pos.mean().item()
+
+        # 2. False Positive Score & Empty Accuracy across clean pairs
+        canvas_pixels = 128 * 800
+        false_positive_score = 1.0
+        empty_accuracy = 1.0
+        if neg_mask.any():
+            fp_pixels = all_psum[neg_mask]
+            fp_frac = fp_pixels / canvas_pixels
+            false_positive_score = (1.0 - fp_frac.mean()).item()
+            empty_accuracy = (fp_pixels == 0).float().mean().item()
+
+        official_score = (
+            (0.70 * foreground_dice)
+            + (0.20 * false_positive_score)
+            + (0.10 * empty_accuracy)
+        )
+        metrics = {
+            'foreground_dice': foreground_dice,
+            'false_positive_score': false_positive_score,
+            'empty_accuracy': empty_accuracy,
+            'official_score': official_score,
+        }
 
         # --- LOGGING ---
         curr_lr = optimizer.param_groups[0]['lr']
@@ -344,8 +389,10 @@ def train_model(
                 scheduler.step(metrics['official_score'])
             else:
                 scheduler.step()
-        del all_preds, all_targets, all_preds_tensor, all_targets_tensor
+        del val_intersections, val_pred_sums, val_gt_sums, all_inter, all_psum, all_gsum
         gc.collect()
+        if device == 'cuda':
+            torch.cuda.empty_cache()
     
      print('Training Complete!')
      wandb.finish()
