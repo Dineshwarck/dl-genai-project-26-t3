@@ -71,10 +71,13 @@ def train_model(
     with_attention=False,
     initial_best_score=None,
     use_amp=True,
+    random_state=42,
+    checkpoint_name='best_scratch_unet.pth',
+    artifact_name='scratch-unet-best',
     wandb_run_name='scratch-unet-multilabel',
     sample_limit=None,
     num_workers=None,
-    wandb_artifact='scratch-unet-best:v64',
+    wandb_artifact='scratch-unet-best:latest',
 ):
      if balanced_sampler is not None:
          use_sampler = balanced_sampler
@@ -91,7 +94,7 @@ def train_model(
 
      # 3. Load Data & Stratified 80/20 split
      df = pd.read_csv(data_csv)
-     train_df, val_df = get_stratified_split(df, val_size=0.20, random_state=42)
+     train_df, val_df = get_stratified_split(df, val_size=0.20, random_state=random_state)
 
      if sample_limit:
         train_df = train_df.head(sample_limit)
@@ -311,7 +314,7 @@ def train_model(
         # --- CHECKPOINT SAVING ---
         if metrics['official_score'] > best_score:
             best_score = metrics['official_score']
-            checkpoint_path = "models/best_scratch_unet.pth"
+            checkpoint_path = os.path.join("models", checkpoint_name)
             torch.save(
                 model.state_dict(),
                 checkpoint_path
@@ -320,9 +323,9 @@ def train_model(
 
             # Stream model directly to W&B cloud storage
             artifact = wandb.Artifact(
-                name='scratch-unet-best',
+                name=artifact_name,
                 type='model',
-                description=f'Best Scratch UNet at epoch {epoch+1} with score {best_score:.4f}',
+                description=f'Best {model.__class__.__name__} at epoch {epoch+1} with score {best_score:.4f}',
                 metadata={
                     'epoch': epoch + 1,
                     'val_loss': avg_val_loss,
