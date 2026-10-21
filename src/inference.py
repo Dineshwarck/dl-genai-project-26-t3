@@ -12,7 +12,7 @@ import wandb
 
 def fetch_model_from_wandb(
     project='24F2004781-t32026',
-    artifact_name='scratch-unet-best:v64',
+    artifact_name='scratch-unet-best:latest',
     target_dir='models'
 ):
     """
@@ -173,7 +173,7 @@ def generate_submission(
     sample_sub_csv='data/sample_submission.csv',
     test_image_dir='data/test',
     checkpoint_path=None,
-    wandb_artifact='scratch-unet-best:v64',
+    wandb_artifact='scratch-unet-best:latest',
     output_csv='submission.csv',
     threshold=CLASS_THRESHOLDS,
     min_areas=MIN_AREAS,
