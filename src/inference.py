@@ -26,7 +26,11 @@ def fetch_model_from_wandb(
     artifact = api.artifact(f"{project}/{artifact_name}", type='model')
     download_dir = artifact.download(root=target_dir)
     
-    checkpoint_path = os.path.join(download_dir, 'best_scratch_unet.pth')
+    pth_files = [f for f in os.listdir(download_dir) if f.endswith('.pth')]
+    if pth_files:
+        checkpoint_path = os.path.join(download_dir, pth_files[0])
+    else:
+        checkpoint_path = os.path.join(download_dir, 'best_scratch_unet.pth')
     print(f"[OK] Successfully downloaded best model to: {checkpoint_path}")
     return checkpoint_path
 
