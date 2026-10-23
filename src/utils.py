@@ -14,3 +14,14 @@ def rle_to_mask(rle_string,height,width):
         mask_1d[start_pixel:start_pixel+length] = 1
     mask_2d = mask_1d.reshape((height,width),order='F')
     return mask_2d
+
+def mask_to_rle(mask):
+  """mask: 2D numpy array, 1 - defect, 0 - background
+
+  Returns run-length encoding string (1-indexed, Fortran/column-major order).
+  """
+  pixels = mask.flatten(order='F')
+  pixels = np.concatenate([[0], pixels, [0]])
+  runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
+  runs[1::2] -= runs[::2]
+  return ' '.join(str(x) for x in runs)

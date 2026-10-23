@@ -20,5 +20,7 @@ wandb/
 # Secrets
 .env
 
-# Data
+# Data & Submissions
 data/
+submission.csv
+val_predictions.csv
