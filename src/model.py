@@ -412,3 +412,70 @@ class ResAttentionUNet(nn.Module):
         if return_cls or (self.training and cls_logits is not None):
             return mask_logits, cls_logits
         return mask_logits
+
+# Dedicated Scratch Classifier
+class SurfaceDefectClassifier(nn.Module):
+    """
+    Dedicated 100% Scratch Multi-Label Classifier for Industrial Steel Sheets.
+    
+    Architectural Highlights:
+      1. 5-Stage Residual Backbone with Spatial & Channel Squeeze-and-Excitation (scSE).
+      2. Dual Global Pooling: Concatenates AdaptiveAvgPool2d (broad textures) 
+         and AdaptiveMaxPool2d (sharp 1-pixel scratch spikes).
+      3. Regularized Dense Classification Head with Dropout(0.4) and BatchNorm1d.
+      4. Outputs 4 independent logits (Defects A, B, C, D) without softmax constraint
+         (allows multi-label co-occurrence).
+    """
+    def __init__(self, in_channels: int=3, num_classes: int = 4):
+        super().__init__()
+
+        # --- Stage 1 to 5: Feature Extraction ---
+        # Input: (B, 3, 128, 800)
+        self.stage1 = SEResBlock(in_channels,64) # -> (B, 64, 128, 800)
+        self.pool1 = nn.MaxPool2d(kernel_size=2,stride=2) # -> (B, 64, 64, 400)
+        
+        self.stage2 = SEResBlock(64,128) # -> (B, 128, 64, 400)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 128, 32, 200)
+
+        self.stage3 = SEResBlock(128, 256) # -> (B, 256, 32, 200)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 256, 16, 100)
+
+        self.stage4 = SEResBlock(256, 384) # -> (B, 384, 16, 100)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 384, 8, 50)
+
+        self.stage5 = SEResBlock(384, 512) # -> (B, 512, 8, 50)
+        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 512, 4, 25)
+
+        # --- Dual Global Pooling (Avg + Max) ---
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1)) # -> (B, 512, 1, 1)
+        self.max_pool = nn.AdaptiveMaxPool2d((1, 1)) # -> (B, 512, 1, 1)
+
+        pooled_dim = 512*2
+
+        # --- Multi-Label Classification Head ---
+        self.classifier = nn.Sequential(
+            nn.Linear(pooled_dim, 256), # 1024 features combined
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.4),
+            nn.Linear(256, num_classes) # Output 4 logits
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Forward pass through 5 stages
+        x = self.pool1(self.stage1(x))   # -> (B, 64, 64, 400)
+        x = self.pool2(self.stage2(x))   # -> (B, 128, 32, 200)
+        x = self.pool3(self.stage3(x))   # -> (B, 256, 16, 100)
+        x = self.pool4(self.stage4(x))   # -> (B, 384, 8, 50)
+        x = self.pool5(self.stage5(x))   # -> (B, 512, 4, 25)
+
+        # Dual Global Pooling
+        avg_feat = self.avg_pool(x).flatten(1) # (B, 512)
+        max_feat = self.max_pool(x).flatten(1) # (B, 512)
+        combined_feat = torch.cat([avg_feat, max_feat], dim=1) # (B, 1024)
+
+        # Final classification - Raw logits (B, 4)
+        logits = self.classifier(combined_feat) # (B, 4)
+
+        return logits
+

@@ -154,7 +154,11 @@ def train_model(
              state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
              missing, unexpected = model.load_state_dict(state_dict, strict=False)
              print(f"[Resume] Weights loaded successfully. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
-
+     # Wrap with DataParallel if multiple GPUs available
+     if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+         print(f"Utilizing {torch.cuda.device_count()} GPUs with DataParallel!")
+         model = nn.DataParallel(model) 
+     
      criterion = ComboLoss(
          bce_weight=1.0,
          dice_weight=1.0,
@@ -360,8 +364,10 @@ def train_model(
         if metrics['official_score'] > best_score:
             best_score = metrics['official_score']
             checkpoint_path = os.path.join("models", checkpoint_name)
+            
+            save_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
             torch.save(
-                model.state_dict(),
+                save_dict,
                 checkpoint_path
             )
             print(f'Saved new best model checkpoint! Score: {best_score:.4f}\n')
