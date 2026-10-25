@@ -93,6 +93,32 @@ def train_model(
      wandb.init(project='24F2004781-t32026', name=wandb_run_name)
 
      # 3. Load Data & Stratified 80/20 split
+     if not os.path.exists(data_csv):
+         for c in [
+             '/kaggle/input/competitions/industrial-surface-defect-detection/public/train.csv',
+             '/kaggle/input/industrial-surface-defect-detection/public/train.csv',
+             '/kaggle/input/industrial-surface-defect-detection/train.csv',
+             'data/train.csv',
+             '../data/train.csv',
+         ]:
+             if os.path.exists(c):
+                 data_csv = c
+                 break
+
+     if not os.path.exists(image_dir):
+         for c in [
+             '/kaggle/input/competitions/industrial-surface-defect-detection/public/train',
+             '/kaggle/input/industrial-surface-defect-detection/public/train',
+             '/kaggle/input/industrial-surface-defect-detection/train',
+             'data/train',
+             '../data/train',
+         ]:
+             if os.path.exists(c):
+                 image_dir = c
+                 break
+
+     print(f"Loading data from: {data_csv}")
+     print(f"Loading images from: {image_dir}")
      df = pd.read_csv(data_csv)
      train_df, val_df = get_stratified_split(df, val_size=0.20, random_state=random_state)
 

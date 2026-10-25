@@ -43,10 +43,11 @@ def train_classifier(
     # 1. Resolve Dataset Paths (handles Kaggle, Colab, or local repo root)
     if not os.path.exists(data_csv):
         candidates_csv = [
+            '/kaggle/input/competitions/industrial-surface-defect-detection/public/train.csv',
+            '/kaggle/input/industrial-surface-defect-detection/public/train.csv',
+            '/kaggle/input/industrial-surface-defect-detection/train.csv',
             'data/train.csv',
             '../data/train.csv',
-            '/kaggle/input/industrial-surface-defect-detection/train.csv',
-            '/kaggle/input/severstal-steel-defect-detection/train.csv',
             os.path.join(os.getcwd(), 'data', 'train.csv')
         ]
         for c in candidates_csv:
@@ -56,10 +57,11 @@ def train_classifier(
 
     if not os.path.exists(image_dir):
         candidates_img = [
+            '/kaggle/input/competitions/industrial-surface-defect-detection/public/train',
+            '/kaggle/input/industrial-surface-defect-detection/public/train',
+            '/kaggle/input/industrial-surface-defect-detection/train',
             'data/train',
             '../data/train',
-            '/kaggle/input/industrial-surface-defect-detection/train',
-            '/kaggle/input/severstal-steel-defect-detection/train_images',
             os.path.join(os.getcwd(), 'data', 'train')
         ]
         for c in candidates_img:
