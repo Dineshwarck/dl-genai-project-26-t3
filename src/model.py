@@ -414,6 +414,59 @@ class ResAttentionUNet(nn.Module):
         return mask_logits
 
 # Dedicated Scratch Classifier
+class ChannelSE(nn.Module):
+    def __init__(self, in_channels: int, reduction: int = 16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Sequential(
+            nn.Linear(in_channels, max(in_channels // reduction, 4), bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(max(in_channels // reduction, 4), in_channels, bias=False),
+            nn.Sigmoid()
+        )
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, _, _ = x.size()
+        return x * self.fc(self.avg_pool(x).view(b, c)).view(b, c, 1, 1)
+
+
+class SpatialSE(nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, 1, kernel_size=1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(self.conv(x))
+
+
+class Classifier_scSE(nn.Module):
+    def __init__(self, in_channels: int, reduction: int = 16):
+        super().__init__()
+        self.cse = ChannelSE(in_channels, reduction)
+        self.sse = SpatialSE(in_channels)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.cse(x) + self.sse(x)
+
+
+class ClassifierResBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.scse = Classifier_scSE(out_channels)
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+            nn.BatchNorm2d(out_channels)
+        ) if in_channels != out_channels else nn.Identity()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        res = self.shortcut(x)
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out = self.scse(out)
+        return self.relu(out + res)
+
+
 class SurfaceDefectClassifier(nn.Module):
     """
     Dedicated 100% Scratch Multi-Label Classifier for Industrial Steel Sheets.
@@ -426,56 +479,51 @@ class SurfaceDefectClassifier(nn.Module):
       4. Outputs 4 independent logits (Defects A, B, C, D) without softmax constraint
          (allows multi-label co-occurrence).
     """
-    def __init__(self, in_channels: int=3, num_classes: int = 4):
+    def __init__(self, in_channels: int = 3, num_classes: int = 4):
         super().__init__()
 
         # --- Stage 1 to 5: Feature Extraction ---
         # Input: (B, 3, 128, 800)
-        self.stage1 = SEResBlock(in_channels,64) # -> (B, 64, 128, 800)
-        self.pool1 = nn.MaxPool2d(kernel_size=2,stride=2) # -> (B, 64, 64, 400)
+        self.stage1 = ClassifierResBlock(in_channels, 64)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        self.stage2 = SEResBlock(64,128) # -> (B, 128, 64, 400)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 128, 32, 200)
+        self.stage2 = ClassifierResBlock(64, 128)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.stage3 = SEResBlock(128, 256) # -> (B, 256, 32, 200)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 256, 16, 100)
+        self.stage3 = ClassifierResBlock(128, 256)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.stage4 = SEResBlock(256, 384) # -> (B, 384, 16, 100)
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 384, 8, 50)
+        self.stage4 = ClassifierResBlock(256, 384)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.stage5 = SEResBlock(384, 512) # -> (B, 512, 8, 50)
-        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2) # -> (B, 512, 4, 25)
+        self.stage5 = ClassifierResBlock(384, 512)
+        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # --- Dual Global Pooling (Avg + Max) ---
-        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1)) # -> (B, 512, 1, 1)
-        self.max_pool = nn.AdaptiveMaxPool2d((1, 1)) # -> (B, 512, 1, 1)
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.max_pool = nn.AdaptiveMaxPool2d((1, 1))
 
-        pooled_dim = 512*2
+        pooled_dim = 512 * 2
 
         # --- Multi-Label Classification Head ---
         self.classifier = nn.Sequential(
-            nn.Linear(pooled_dim, 256), # 1024 features combined
+            nn.Linear(pooled_dim, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.4),
-            nn.Linear(256, num_classes) # Output 4 logits
+            nn.Linear(256, num_classes)
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Forward pass through 5 stages
-        x = self.pool1(self.stage1(x))   # -> (B, 64, 64, 400)
-        x = self.pool2(self.stage2(x))   # -> (B, 128, 32, 200)
-        x = self.pool3(self.stage3(x))   # -> (B, 256, 16, 100)
-        x = self.pool4(self.stage4(x))   # -> (B, 384, 8, 50)
-        x = self.pool5(self.stage5(x))   # -> (B, 512, 4, 25)
+        x = self.pool1(self.stage1(x))
+        x = self.pool2(self.stage2(x))
+        x = self.pool3(self.stage3(x))
+        x = self.pool4(self.stage4(x))
+        x = self.pool5(self.stage5(x))
 
-        # Dual Global Pooling
-        avg_feat = self.avg_pool(x).flatten(1) # (B, 512)
-        max_feat = self.max_pool(x).flatten(1) # (B, 512)
-        combined_feat = torch.cat([avg_feat, max_feat], dim=1) # (B, 1024)
+        avg_feat = self.avg_pool(x).flatten(1)
+        max_feat = self.max_pool(x).flatten(1)
+        combined_feat = torch.cat([avg_feat, max_feat], dim=1)
 
-        # Final classification - Raw logits (B, 4)
-        logits = self.classifier(combined_feat) # (B, 4)
-
+        logits = self.classifier(combined_feat)
         return logits
-
