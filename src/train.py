@@ -14,7 +14,7 @@ import wandb
 from src.dataset import SurfaceDefectDataset, get_stratified_split, get_defect_aware_sampler
 from src.losses import ComboLoss
 from src.metrics import compute_competition_metrics, CLASS_THRESHOLDS
-from src.model import ScratchUNet, ResAttentionUNet
+from src.model import ScratchUNet, ResAttentionUNet, PretrainedResNet34UNet
 from src.inference import fetch_model_from_wandb, DEFAULT_CLS_GATES
 
 
@@ -158,6 +158,9 @@ def train_model(
      if str(model_architecture).lower() in ('res_attention_unet', 'resattentionunet', 'resattunet'):
          model = ResAttentionUNet(in_channels=3, out_channels=4, deep_supervision=deep_supervision).to(device)
          print(f"Instantiated ResAttentionUNet (scSE Residual Blocks, ASPP Bottleneck, Attention Gates, DeepSupervision={deep_supervision})")
+     elif str(model_architecture).lower() in ('pretrained_resnet34', 'resnet34_unet', 'resnet34'):
+         model = PretrainedResNet34UNet(in_channels=3, out_channels=4, pretrained=True, with_classifier=True).to(device)
+         print("Instantiated PretrainedResNet34UNet (Transfer Learning from ImageNet with Auxiliary Classifier)")
      else:
          model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3, with_attention=with_attention).to(device)
          print(f"Instantiated ScratchUNet (with_attention={with_attention})")
