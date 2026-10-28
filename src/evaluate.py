@@ -556,10 +556,10 @@ def find_optimal_thresholds(
 
     # Class-specific candidate area ranges tailored to defect morphology at 128x800
     candidate_areas_by_class = {
-        0: [30, 60, 100, 150],           # defect_a: thin scratches
-        1: [40, 80, 120, 200],           # defect_b: edge cracks
-        2: [100, 200, 300, 500, 800],    # defect_c: scabs/pitting
-        3: [150, 300, 500, 800, 1200],   # defect_d: texture patches
+        0: [30, 60, 100, 150],           # defect_a: inclusions/pitting
+        1: [40, 80, 120, 200],           # defect_b: edge cracks/tears
+        2: [100, 200, 300, 500, 800],    # defect_c: crazing/scaling
+        3: [150, 300, 500, 800, 1200],   # defect_d: surface patches
     }
 
     optimal_thresholds = {}

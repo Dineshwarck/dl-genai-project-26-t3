@@ -60,10 +60,10 @@ class TestDefectDataset(Dataset):
         return image_tensor, img_id
 
 DEFAULT_CLS_GATES = {
-    0: 0.25,  # defect_a: lower gate to preserve thin 1-pixel scratches
-    1: 0.20,  # defect_b: sensitive gate for rare edge cracks
-    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel
-    3: 0.35,  # defect_d: canonical gate
+    0: 0.25,  # defect_a: lower gate to preserve small inclusions/pitting
+    1: 0.20,  # defect_b: sensitive gate for rare edge cracks/tears
+    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel (crazing/scaling)
+    3: 0.35,  # defect_d: canonical gate for surface patches
 }
 
 
