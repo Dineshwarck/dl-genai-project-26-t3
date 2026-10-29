@@ -6,32 +6,32 @@ import torch
 # Tailored for Multi-Task U-Net with Soft Quadratic Gating:
 # Since the auxiliary classifier already suppresses false alarms (FP score > 0.997),
 # area thresholds are calibrated so they do NOT discard genuine fine defects:
-# - defect_a: 60 px (thin scratches)
-# - defect_b: 80 px (edge cracks)
-# - defect_c: 250 px (scabs/pitting - preserves the 16% of true defects under 800 px)
-# - defect_d: 400 px (texture patches - preserves genuine small patches)
+# - defect_a: 60 px (inclusions/pitting)
+# - defect_b: 80 px (edge cracks/tears)
+# - defect_c: 250 px (crazing/scaling - preserves the 16% of true defects under 800 px)
+# - defect_d: 400 px (surface patches - preserves genuine small patches)
 # Empirically validated optimal minimum connected component areas (Achieved 0.65718 on Public Leaderboard)
 MIN_AREAS = {
-    0: 60,   # defect_a: captures fine scratches
-    1: 120,  # defect_b: captures edge cracks without noise (FP score: 0.9998)
-    2: 350,  # defect_c: captures scabs/pitting while protecting clean steel
-    3: 300,  # defect_d: captures texture patches (Score: 0.8011)
+    0: 60,   # defect_a: captures localized inclusions/pitting
+    1: 120,  # defect_b: captures edge cracks/tears without noise (FP score: 0.9998)
+    2: 350,  # defect_c: captures crazing/scaling while protecting clean steel
+    3: 300,  # defect_d: captures surface patches (Score: 0.8011)
 }
 
 # Empirically validated optimal decision thresholds (Achieved 0.65718 on Public Leaderboard)
 CLASS_THRESHOLDS = {
-    0: 0.32,  # defect_a: fine scratch sensitivity
-    1: 0.35,  # defect_b: edge crack precision
+    0: 0.32,  # defect_a: inclusion/pitting sensitivity
+    1: 0.35,  # defect_b: edge crack/tear precision
     2: 0.30,  # defect_c: protected threshold against rolling grain noise
-    3: 0.30,  # defect_d: high-dice threshold
+    3: 0.30,  # defect_d: surface patch threshold
 }
 
 # Maximum area ceilings to eliminate whole-sheet false alarms (e.g. 49k shadow hallucinations)
 MAX_AREAS = {
-    0: 25000,  # defect_a scratches never cover >25k pixels
-    1: 15000,  # defect_b edge cracks never cover >15k pixels
-    2: 35000,  # defect_c scabs never cover >35k pixels (prunes full-sheet rough scale false alarms)
-    3: 35000,  # defect_d patches never cover >35k pixels (prunes 49k lighting/shadow hallucinations)
+    0: 25000,  # defect_a inclusions/pitting never cover >25k pixels
+    1: 15000,  # defect_b edge cracks/tears never cover >15k pixels
+    2: 35000,  # defect_c crazing/scaling never cover >35k pixels (prunes full-sheet rough scale false alarms)
+    3: 35000,  # defect_d surface patches never cover >35k pixels (prunes 49k lighting/shadow hallucinations)
 }
 
 def post_process_mask(
@@ -87,13 +87,13 @@ def post_process_mask(
                 continue
 
             if filter_geometry:
-                # Defect B: Edge cracks are tall vertical tears (H_span >= 25 px, H/W >= 2.0)
+                # Defect B: Edge cracks/tears are tall vertical features (H_span >= 25 px, H/W >= 2.0)
                 if cls_idx == 1:
                     aspect_ratio = h / max(w, 1)
                     if h < 25 or aspect_ratio < 2.0:
                         continue
 
-                # Defect A: Longitudinal scratches are vertical streaks (H_span >= 15 px, H/W >= 1.2)
+                # Defect A: Inclusions/pitting morphology (H_span >= 15 px, H/W >= 1.2)
                 elif cls_idx == 0:
                     aspect_ratio = h / max(w, 1)
                     if h < 15 or aspect_ratio < 1.2:

@@ -14,7 +14,7 @@ import wandb
 from src.dataset import SurfaceDefectDataset, get_stratified_split, get_defect_aware_sampler
 from src.losses import ComboLoss
 from src.metrics import compute_competition_metrics, CLASS_THRESHOLDS
-from src.model import ScratchUNet, ResAttentionUNet
+from src.model import ScratchUNet, ResAttentionUNet, PretrainedResNet34UNet
 from src.inference import fetch_model_from_wandb, DEFAULT_CLS_GATES
 
 
@@ -93,6 +93,32 @@ def train_model(
      wandb.init(project='24F2004781-t32026', name=wandb_run_name)
 
      # 3. Load Data & Stratified 80/20 split
+     if not os.path.exists(data_csv):
+         for c in [
+             '/kaggle/input/competitions/industrial-surface-defect-detection/public/train.csv',
+             '/kaggle/input/industrial-surface-defect-detection/public/train.csv',
+             '/kaggle/input/industrial-surface-defect-detection/train.csv',
+             'data/train.csv',
+             '../data/train.csv',
+         ]:
+             if os.path.exists(c):
+                 data_csv = c
+                 break
+
+     if not os.path.exists(image_dir):
+         for c in [
+             '/kaggle/input/competitions/industrial-surface-defect-detection/public/train',
+             '/kaggle/input/industrial-surface-defect-detection/public/train',
+             '/kaggle/input/industrial-surface-defect-detection/train',
+             'data/train',
+             '../data/train',
+         ]:
+             if os.path.exists(c):
+                 image_dir = c
+                 break
+
+     print(f"Loading data from: {data_csv}")
+     print(f"Loading images from: {image_dir}")
      df = pd.read_csv(data_csv)
      train_df, val_df = get_stratified_split(df, val_size=0.20, random_state=random_state)
 
@@ -132,6 +158,9 @@ def train_model(
      if str(model_architecture).lower() in ('res_attention_unet', 'resattentionunet', 'resattunet'):
          model = ResAttentionUNet(in_channels=3, out_channels=4, deep_supervision=deep_supervision).to(device)
          print(f"Instantiated ResAttentionUNet (scSE Residual Blocks, ASPP Bottleneck, Attention Gates, DeepSupervision={deep_supervision})")
+     elif str(model_architecture).lower() in ('pretrained_resnet34', 'resnet34_unet', 'resnet34'):
+         model = PretrainedResNet34UNet(in_channels=3, out_channels=4, pretrained=True, with_classifier=True).to(device)
+         print("Instantiated PretrainedResNet34UNet (Transfer Learning from ImageNet with Auxiliary Classifier)")
      else:
          model = ScratchUNet(in_channels=3, out_channels=4, dropout_rate=0.3, with_attention=with_attention).to(device)
          print(f"Instantiated ScratchUNet (with_attention={with_attention})")
@@ -154,7 +183,11 @@ def train_model(
              state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
              missing, unexpected = model.load_state_dict(state_dict, strict=False)
              print(f"[Resume] Weights loaded successfully. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
-
+     # Wrap with DataParallel if multiple GPUs available
+     if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+         print(f"Utilizing {torch.cuda.device_count()} GPUs with DataParallel!")
+         model = nn.DataParallel(model) 
+     
      criterion = ComboLoss(
          bce_weight=1.0,
          dice_weight=1.0,
@@ -360,8 +393,10 @@ def train_model(
         if metrics['official_score'] > best_score:
             best_score = metrics['official_score']
             checkpoint_path = os.path.join("models", checkpoint_name)
+            
+            save_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
             torch.save(
-                model.state_dict(),
+                save_dict,
                 checkpoint_path
             )
             print(f'Saved new best model checkpoint! Score: {best_score:.4f}\n')

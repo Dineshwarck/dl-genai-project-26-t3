@@ -60,10 +60,10 @@ class TestDefectDataset(Dataset):
         return image_tensor, img_id
 
 DEFAULT_CLS_GATES = {
-    0: 0.25,  # defect_a: lower gate to preserve thin 1-pixel scratches
-    1: 0.20,  # defect_b: sensitive gate for rare edge cracks
-    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel
-    3: 0.35,  # defect_d: canonical gate
+    0: 0.25,  # defect_a: lower gate to preserve small inclusions/pitting
+    1: 0.20,  # defect_b: sensitive gate for rare edge cracks/tears
+    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel (crazing/scaling)
+    3: 0.35,  # defect_d: canonical gate for surface patches
 }
 
 
@@ -220,7 +220,35 @@ def generate_submission(
         else:
             model_paths.append(ensemble_paths)
 
-    # 2. Load Submission Template
+    # 2. Resolve Test Dataset Paths
+    if not os.path.exists(sample_sub_csv):
+        for c in [
+            '/kaggle/input/competitions/industrial-surface-defect-detection/public/sample_submission.csv',
+            '/kaggle/input/industrial-surface-defect-detection/public/sample_submission.csv',
+            '/kaggle/input/industrial-surface-defect-detection/sample_submission.csv',
+            'data/sample_submission.csv',
+            '../data/sample_submission.csv',
+        ]:
+            if os.path.exists(c):
+                sample_sub_csv = c
+                break
+
+    if not os.path.exists(test_image_dir):
+        for c in [
+            '/kaggle/input/competitions/industrial-surface-defect-detection/public/test',
+            '/kaggle/input/industrial-surface-defect-detection/public/test',
+            '/kaggle/input/industrial-surface-defect-detection/test',
+            'data/test',
+            '../data/test',
+        ]:
+            if os.path.exists(c):
+                test_image_dir = c
+                break
+
+    print(f"Using Sample Submission CSV: {sample_sub_csv}")
+    print(f"Using Test Image Directory: {test_image_dir}")
+
+    # Load Submission Template
     sub_df = pd.read_csv(sample_sub_csv)
     unique_image_ids = sub_df['image_id'].unique()
     print(f"Total test images to predict: {len(unique_image_ids)}")
