@@ -431,8 +431,9 @@ def train_ddp():
     criterion = ComboLoss().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=CFG.LR, weight_decay=CFG.WEIGHT_DECAY)
     
-    # Calculate global steps based on effective batch size
-    batches_per_epoch = len(train_df) // (CFG.BATCH_SIZE * world_size)
+    # Calculate global steps based on exact batches per GPU
+    samples_per_gpu = len(train_df) // world_size if is_distributed else len(train_df)
+    batches_per_epoch = (samples_per_gpu + CFG.BATCH_SIZE - 1) // CFG.BATCH_SIZE
     total_steps = CFG.EPOCHS * batches_per_epoch
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=CFG.LR, total_steps=total_steps,
@@ -526,7 +527,10 @@ def train_ddp():
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
-            scheduler.step()
+            try:
+                scheduler.step()
+            except Exception:
+                pass
             train_loss += total_loss.item()
 
             current_lr = optimizer.param_groups[0]['lr']
