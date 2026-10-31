@@ -65,14 +65,10 @@ class SurfaceDefectDataset(Dataset):
             image = augmented['image']
             mask = augmented['mask']
 
-        # 4. Convert NumPy Arrays to PyTorch Tensors
-        # Image: (H, W, 3) -> (3, H, W) normalized to [0.0, 1.0]
-        image_tensor = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1) / 255.0
-
-        # Mask: (H, W, 4) -> (4, H, W) binary values {0.0, 1.0}
-        mask_tensor = torch.tensor(mask, dtype=torch.float32).permute(2, 0, 1)
-
-        return image_tensor, mask_tensor
+        # 4. Convert NumPy Arrays to PyTorch Tensors (zero-copy from contiguous buffer)
+        image_np = np.ascontiguousarray(image.transpose(2, 0, 1), dtype=np.float32) / 255.0
+        mask_np = np.ascontiguousarray(mask.transpose(2, 0, 1), dtype=np.float32)
+        return torch.from_numpy(image_np), torch.from_numpy(mask_np)
 
 
 def get_stratified_split(df, val_size=0.20, random_state=42):
