@@ -259,9 +259,9 @@ def generate_submission(
         print(f"Limited to {sample_limit} images for fast testing")
 
     # 3. Setup Test DataLoader
-    num_workers = 0 if os.name == 'nt' else 2
+    num_workers = 0
     test_dataset = TestDefectDataset(unique_image_ids, test_image_dir)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False)
 
     # 4. Load Models
     models = [load_single_model(p, device) for p in model_paths]

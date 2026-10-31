@@ -180,20 +180,20 @@ def train_pretrained_model(
     val_ds = SurfaceDefectDataset(val_df, image_dir=image_dir, transforms=val_tf)
 
     if num_workers is None:
-        num_workers = 2 if (torch.cuda.is_available() and os.name != 'nt') else 0
+        num_workers = 0
 
     if use_sampler and sample_limit is None:
         train_sampler = get_defect_aware_sampler(train_df)
         train_loader = DataLoader(
-            train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers, pin_memory=True
+            train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers, pin_memory=False
         )
         print("Using Defect-Aware Weighted Sampler (oversampling rare Defect A and Defect B)")
     else:
         train_loader = DataLoader(
-            train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True
+            train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=False
         )
 
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=False)
 
     # 3. Model Architecture
     model = PretrainedResNet34UNet(

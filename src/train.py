@@ -87,7 +87,7 @@ def train_model(
      print(f"Using device: {device}")
 
      if num_workers is None:
-         num_workers = 2 if (torch.cuda.is_available() and os.name != 'nt') else 0
+         num_workers = 0
 
      # 2. Initialize Weights & Biases
      wandb.init(project='24F2004781-t32026', name=wandb_run_name)

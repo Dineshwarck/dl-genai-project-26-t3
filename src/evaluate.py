@@ -113,7 +113,8 @@ def evaluate_validation_set(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0 if os.name == 'nt' else 2,
+        num_workers=0,
+        pin_memory=False,
     )
 
     # 3. Load Trained Models
@@ -511,7 +512,8 @@ def find_optimal_thresholds(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0 if os.name == 'nt' else 2,
+        num_workers=0,
+        pin_memory=False,
     )
 
     # 3. Load Trained Models

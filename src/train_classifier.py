@@ -81,9 +81,9 @@ def train_classifier(
     train_ds = SurfaceDefectDataset(train_df, image_dir=image_dir, transforms=train_tf)
     val_ds = SurfaceDefectDataset(val_df, image_dir=image_dir, transforms=val_tf)
 
-    num_workers = 2 if (torch.cuda.is_available() and os.name != 'nt') else 0
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    num_workers = 0
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False)
 
     # 3. Model, Weighted BCE Loss, Optimizer
     model = SurfaceDefectClassifier(in_channels=3, num_classes=4).to(device)
