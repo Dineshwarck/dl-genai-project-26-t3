@@ -88,10 +88,12 @@ def train_classifier(
     # 3. Model, Weighted BCE Loss, Optimizer
     model = SurfaceDefectClassifier(in_channels=3, num_classes=4).to(device)
 
-    # Multiple-GPU check
-    if torch.cuda.is_available() and torch.cuda.device_count()>1:
+    use_data_parallel = False
+    if use_data_parallel and torch.cuda.is_available() and torch.cuda.device_count() > 1:
         print(f"Utilizing {torch.cuda.device_count()} GPUs with DataParallel!")
         model = nn.DataParallel(model)
+    else:
+        print(f"Training on single device: {device}")
 
     # Positive class weighting: penalizes missing rare defects (Defect B gets 8x, Defect A gets 3x)
     pos_weights = torch.tensor([3.0, 8.0, 1.2, 1.8], device=device)
