@@ -62,7 +62,7 @@ class TestDefectDataset(Dataset):
 DEFAULT_CLS_GATES = {
     0: 0.25,  # defect_a: lower gate to preserve small inclusions/pitting
     1: 0.20,  # defect_b: sensitive gate for rare edge cracks/tears
-    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel (crazing/scaling)
+    2: 0.40,  # defect_c: calibrated gate to suppress rolling scale false alarms
     3: 0.35,  # defect_d: canonical gate for surface patches
 }
 

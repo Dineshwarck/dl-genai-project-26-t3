@@ -12,9 +12,9 @@ import torch
 # - defect_d: 400 px (surface patches - preserves genuine small patches)
 # Empirically validated optimal minimum connected component areas (Achieved 0.65718 on Public Leaderboard)
 MIN_AREAS = {
-    0: 45,   # defect_a: captures localized inclusions/pitting (ground truth min: 40 px)
+    0: 180,  # defect_a: suppresses rolling speckle false alarms (validation noise floor)
     1: 90,   # defect_b: captures edge cracks/tears without noise (ground truth min: 93 px)
-    2: 300,  # defect_c: captures crazing/scaling while protecting clean steel (ground truth 5th pct: 378 px)
+    2: 450,  # defect_c: suppresses crazing/scaling false alarms from longitudinal scale
     3: 250,  # defect_d: captures surface patches (ground truth 1st pct: 311 px)
 }
 
