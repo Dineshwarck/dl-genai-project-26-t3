@@ -155,7 +155,7 @@ def get_stratified_split(df, val_size=0.20, random_state=42):
     return train_df, val_df
 
 
-def get_defect_aware_weights(df, clean_weight=0.2, a_weight=4.0, b_weight=12.0, c_weight=1.2, d_weight=1.5):
+def get_defect_aware_weights(df, clean_weight=0.5, a_weight=4.0, b_weight=12.0, c_weight=1.2, d_weight=1.5):
     weights = np.full(len(df), clean_weight, dtype=np.float32)
     for idx in range(len(df)):
         row = df.iloc[idx]
@@ -353,14 +353,65 @@ class ResAttentionUNet(nn.Module):
         return mask_logits
 
 
+def lovasz_grad(gt_sorted):
+    p = len(gt_sorted)
+    gts = gt_sorted.sum()
+    intersection = gts - gt_sorted.float().cumsum(0)
+    union = gts + (1.0 - gt_sorted.float()).cumsum(0)
+    jaccard = 1.0 - intersection / (union + 1e-7)
+    if p > 1:
+        jaccard[1:p] = jaccard[1:p] - jaccard[0:-1]
+    return jaccard
+
+
+def lovasz_hinge_flat(logits, labels):
+    if len(labels) == 0:
+        return logits.sum() * 0.0
+    signs = 2.0 * labels.float() - 1.0
+    errors = 1.0 - logits * signs
+    errors_sorted, perm = torch.sort(errors, dim=0, descending=True)
+    perm = perm.data
+    gt_sorted = labels[perm]
+    grad = lovasz_grad(gt_sorted)
+    loss = torch.dot(F.relu(errors_sorted), grad)
+    return loss
+
+
+class LovaszLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits, targets):
+        B, C, H, W = logits.shape
+        total_loss = 0.0
+        for c in range(C):
+            l_flat = logits[:, c].reshape(-1)
+            t_flat = targets[:, c].reshape(-1)
+            total_loss = total_loss + lovasz_hinge_flat(l_flat, t_flat)
+        return total_loss / C
+
+
 class ComboLoss(nn.Module):
-    def __init__(self, bce_weight=1.0, dice_weight=1.0, use_focal=True, gamma=2.0, alpha=(0.75, 0.85, 0.50, 0.60), channel_weights=(1.5, 2.5, 1.0, 1.2)):
+    def __init__(
+        self,
+        bce_weight=1.0,
+        dice_weight=1.0,
+        lovasz_weight=0.5,
+        use_lovasz=True,
+        use_focal=True,
+        gamma=2.0,
+        alpha=(0.75, 0.85, 0.50, 0.60),
+        channel_weights=(1.5, 2.5, 1.0, 1.2),
+    ):
         super().__init__()
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
+        self.lovasz_weight = lovasz_weight
+        self.use_lovasz = use_lovasz
         self.gamma = gamma
         self.register_buffer('alpha', torch.tensor(alpha, dtype=torch.float32).view(1, -1, 1, 1))
         self.register_buffer('channel_weights', torch.tensor(channel_weights, dtype=torch.float32).view(1, -1, 1, 1))
+        self.lovasz = LovaszLoss()
 
     def forward(self, logits, targets):
         probs = torch.sigmoid(logits)
@@ -372,7 +423,10 @@ class ComboLoss(nn.Module):
         intersection = (probs * targets).sum(dim=(2, 3))
         union = probs.sum(dim=(2, 3)) + targets.sum(dim=(2, 3))
         dice_loss = (1.0 - (2.0 * intersection + 1e-7) / (union + 1e-7)).mean()
-        return self.bce_weight * focal_loss + self.dice_weight * dice_loss
+        total = self.bce_weight * focal_loss + self.dice_weight * dice_loss
+        if self.use_lovasz:
+            total = total + self.lovasz_weight * self.lovasz(logits, targets)
+        return total
 
 
 def train_ddp():

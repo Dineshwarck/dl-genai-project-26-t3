@@ -107,11 +107,65 @@ class FocalLoss(nn.Module):
         return focal_loss
 
 
+def lovasz_grad(gt_sorted):
+    """Computes gradient of the Lovasz extension with respect to sorted errors."""
+    p = len(gt_sorted)
+    gts = gt_sorted.sum()
+    intersection = gts - gt_sorted.float().cumsum(0)
+    union = gts + (1.0 - gt_sorted.float()).cumsum(0)
+    jaccard = 1.0 - intersection / (union + 1e-7)
+    if p > 1:
+        jaccard[1:p] = jaccard[1:p] - jaccard[0:-1]
+    return jaccard
+
+
+def lovasz_hinge_flat(logits, labels):
+    """Binary Lovasz hinge loss on flattened 1D logits and labels."""
+    if len(labels) == 0:
+        return logits.sum() * 0.0
+    signs = 2.0 * labels.float() - 1.0
+    errors = 1.0 - logits * signs
+    errors_sorted, perm = torch.sort(errors, dim=0, descending=True)
+    perm = perm.data
+    gt_sorted = labels[perm]
+    grad = lovasz_grad(gt_sorted)
+    loss = torch.dot(F.relu(errors_sorted), grad)
+    return loss
+
+
+class LovaszLoss(nn.Module):
+    """Multi-label Lovasz-Hinge loss directly optimizing the Jaccard/Dice surrogate
+    at the continuous level, penalizing fuzzy boundary transitions and edge bleeding.
+    """
+    def __init__(self, per_image=False):
+        super().__init__()
+        self.per_image = per_image
+
+    def forward(self, logits, targets):
+        B, C, H, W = logits.shape
+        total_loss = 0.0
+        if self.per_image:
+            count = 0
+            for c in range(C):
+                for b in range(B):
+                    total_loss = total_loss + lovasz_hinge_flat(logits[b, c].reshape(-1), targets[b, c].reshape(-1))
+                    count += 1
+            return total_loss / max(count, 1)
+        else:
+            for c in range(C):
+                l_flat = logits[:, c].reshape(-1)
+                t_flat = targets[:, c].reshape(-1)
+                total_loss = total_loss + lovasz_hinge_flat(l_flat, t_flat)
+            return total_loss / C
+
+
 class ComboLoss(nn.Module):
     def __init__(
         self,
         bce_weight=1.0,
         dice_weight=1.0,
+        lovasz_weight=0.5,
+        use_lovasz=True,
         smooth=1.0,
         use_focal=True,
         gamma=2.0,
@@ -121,11 +175,13 @@ class ComboLoss(nn.Module):
         mask_empty=True,
     ):
         """
-        ComboLoss combining Focal Loss (or BCEWithLogitsLoss) and SoftDiceLoss.
+        ComboLoss combining Focal Loss, SoftDiceLoss, and continuous LovaszLoss.
 
         Args:
             bce_weight: Weight multiplier for the pixel loss (Focal or BCE).
             dice_weight: Weight multiplier for the region loss (Dice).
+            lovasz_weight: Weight multiplier for the boundary Lovasz-hinge loss.
+            use_lovasz: If True, incorporates Lovasz-hinge loss for sharp defect edges.
             smooth: Smoothing factor for Dice calculation.
             use_focal: If True, uses FocalLoss with gamma and alpha (recommended).
                        If False, uses BCEWithLogitsLoss with pos_weight.
@@ -138,6 +194,8 @@ class ComboLoss(nn.Module):
         super().__init__()
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
+        self.lovasz_weight = lovasz_weight
+        self.use_lovasz = use_lovasz
         self.use_focal = use_focal
 
         if use_focal:
@@ -155,6 +213,7 @@ class ComboLoss(nn.Module):
             self.pixel_loss_fn = None
 
         self.dice = SoftDiceLoss(smooth=smooth, channel_weights=channel_weights, mask_empty=mask_empty)
+        self.lovasz = LovaszLoss(per_image=False)
 
     def forward(self, logits, targets):
         if self.use_focal:
@@ -168,6 +227,9 @@ class ComboLoss(nn.Module):
                 pixel_loss = F.binary_cross_entropy_with_logits(logits, targets)
 
         dice_loss = self.dice(logits, targets)
-        return self.bce_weight * pixel_loss + self.dice_weight * dice_loss
+        total_loss = self.bce_weight * pixel_loss + self.dice_weight * dice_loss
+        if self.use_lovasz:
+            total_loss = total_loss + self.lovasz_weight * self.lovasz(logits, targets)
+        return total_loss
 
     
