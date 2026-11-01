@@ -49,7 +49,7 @@ class CFG:
     NUM_WORKERS = 0
     DEFECT_CLASSES = ['defect_a', 'defect_b', 'defect_c', 'defect_d']
     CLASS_THRESHOLDS = {0: 0.32, 1: 0.35, 2: 0.30, 3: 0.30}
-    MIN_AREAS = {0: 60, 1: 120, 2: 350, 3: 300}
+    MIN_AREAS = {0: 45, 1: 90, 2: 300, 3: 250}
     MAX_AREAS = {0: 25000, 1: 15000, 2: 35000, 3: 35000}
     CLS_GATES = {0: 0.25, 1: 0.20, 2: 0.35, 3: 0.35}
     WANDB_PROJECT = '24F2004781-t32026'
