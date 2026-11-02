@@ -155,7 +155,7 @@ def get_stratified_split(df, val_size=0.20, random_state=42):
     return train_df, val_df
 
 
-def get_defect_aware_weights(df, clean_weight=0.5, a_weight=4.0, b_weight=12.0, c_weight=1.2, d_weight=1.5):
+def get_defect_aware_weights(df, clean_weight=0.2, a_weight=4.0, b_weight=12.0, c_weight=1.2, d_weight=1.5):
     weights = np.full(len(df), clean_weight, dtype=np.float32)
     for idx in range(len(df)):
         row = df.iloc[idx]
@@ -396,8 +396,8 @@ class ComboLoss(nn.Module):
         self,
         bce_weight=1.0,
         dice_weight=1.0,
-        lovasz_weight=0.5,
-        use_lovasz=True,
+        lovasz_weight=0.0,
+        use_lovasz=False,
         use_focal=True,
         gamma=2.0,
         alpha=(0.75, 0.85, 0.50, 0.60),

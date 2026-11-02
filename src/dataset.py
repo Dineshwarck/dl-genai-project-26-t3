@@ -111,7 +111,7 @@ def get_stratified_split(df, val_size=0.20, random_state=42):
 
 def get_defect_aware_sampler(
     df,
-    clean_weight=0.5,
+    clean_weight=0.2,
     a_weight=4.0,
     b_weight=12.0,
     c_weight=1.2,
@@ -120,13 +120,13 @@ def get_defect_aware_sampler(
 ):
     """
     Creates a PyTorch WeightedRandomSampler that balances defect representation in training batches.
-    Oversamples rare defects (defect_b: 12x, defect_a: 4x) and balances clean steel (0.5x).
+    Oversamples rare defects (defect_b: 12x, defect_a: 4x) and downsamples clean steel (0.2x).
     Guarantees that every training batch contains rare defects while seeing enough clean steel
     background to suppress rolling scale false alarms.
 
     Args:
         df: DataFrame in either raw or pivoted format.
-        clean_weight: Sampling weight for images with zero defects (default 0.5 for hard-negative balance).
+        clean_weight: Sampling weight for images with zero defects (default 0.2).
         a_weight: Sampling weight for images with defect_a (tiny pits, default 4.0).
         b_weight: Sampling weight for images with defect_b (rare scratches, default 12.0).
         c_weight: Sampling weight for images with defect_c (crazing, default 1.2).
