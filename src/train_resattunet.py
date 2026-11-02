@@ -49,12 +49,12 @@ class CFG:
     NUM_WORKERS = 0
     DEFECT_CLASSES = ['defect_a', 'defect_b', 'defect_c', 'defect_d']
     CLASS_THRESHOLDS = {0: 0.32, 1: 0.35, 2: 0.30, 3: 0.30}
-    MIN_AREAS = {0: 45, 1: 90, 2: 300, 3: 250}
+    MIN_AREAS = {0: 60, 1: 120, 2: 350, 3: 300}
     MAX_AREAS = {0: 25000, 1: 15000, 2: 35000, 3: 35000}
     CLS_GATES = {0: 0.25, 1: 0.20, 2: 0.35, 3: 0.35}
     WANDB_PROJECT = '24F2004781-t32026'
     WANDB_ENTITY = 'dineshwar-developer-indian-institute-of-technology'
-    RESUME_IF_CHECKPOINT_EXISTS = False
+    RESUME_IF_CHECKPOINT_EXISTS = True
 
 
 def resolve_paths():
@@ -214,17 +214,8 @@ class ResBlockWithscSE(nn.Module):
         return self.relu(out + res)
 
 
-class StripASPPBottleneck(nn.Module):
-    """
-    Anisotropic Strip ASPP tailored for 128x800 steel sheet geometry.
-    Bottleneck spatial resolution: (B, 512, 8, 50).
-    Replaces symmetric 3x3 kernels (whose dilation 12/18 overshoots the 8px height) with:
-    - 1x1 standard conv for identity representation
-    - 1x7 and 1x15 horizontal strip convolutions (captures longitudinal crazing networks and scratches)
-    - 5x1 vertical strip convolution (captures transverse defects strictly within the 8px height)
-    - Global average pooling for sheet-level context
-    """
-    def __init__(self, in_channels=512, out_channels=512):
+class ASPPBottleneck(nn.Module):
+    def __init__(self, in_channels, out_channels, atrous_rates=(6, 12, 18)):
         super().__init__()
         self.b0 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
@@ -232,17 +223,17 @@ class StripASPPBottleneck(nn.Module):
             nn.ReLU(inplace=True)
         )
         self.b1 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, (1, 7), padding=(0, 3), bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=atrous_rates[0], dilation=atrous_rates[0], bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
         self.b2 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, (1, 15), padding=(0, 7), bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=atrous_rates[1], dilation=atrous_rates[1], bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
         self.b3 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, (5, 1), padding=(2, 0), bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=atrous_rates[2], dilation=atrous_rates[2], bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
@@ -263,34 +254,6 @@ class StripASPPBottleneck(nn.Module):
         h, w = x.shape[2], x.shape[3]
         out4 = F.interpolate(self.b4(x), size=(h, w), mode='bilinear', align_corners=True)
         return self.project(torch.cat([self.b0(x), self.b1(x), self.b2(x), self.b3(x), out4], dim=1))
-
-
-class DualPoolClsHead(nn.Module):
-    """
-    Dual-Pooling classification head preserving localized signals for tiny defects.
-    Concat(AdaptiveAvgPool, AdaptiveMaxPool) ensures small Defect A/B activations
-    are preserved without 99.5% dilution from background cells.
-    """
-    def __init__(self, in_channels=512, num_classes=4):
-        super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.max_pool = nn.AdaptiveMaxPool2d((1, 1))
-        self.fc = nn.Sequential(
-            nn.Linear(in_channels * 2, 128),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(128, num_classes)
-        )
-
-    def forward(self, x):
-        avg_f = self.avg_pool(x).flatten(1)
-        max_f = self.max_pool(x).flatten(1)
-        feat = torch.cat([avg_f, max_f], dim=1)
-        return self.fc(feat)
-
-
-# Backward compatibility alias
-ASPPBottleneck = StripASPPBottleneck
 
 
 class AttentionBlock(nn.Module):
@@ -320,19 +283,8 @@ class AttentionBlock(nn.Module):
 
 
 class ResAttentionUNet(nn.Module):
-    """
-    Upgraded ResAttentionUNet (Architecture 2.0) designed specifically to address the
-    four empirical failure modes identified in validation error audit:
-    1. Anisotropic Strip ASPP (replaces flawed symmetric dilation on 8x50 bottleneck)
-    2. Dual-Pooling Auxiliary Classification Head (preserves tiny defect signals)
-    3. Deep Supervision Auxiliary Heads at dec2 and dec3 (drives crisp boundary learning)
-    4. Sub-pixel Edge Preserving Skip Connections
-    """
-    def __init__(self, in_channels=3, out_channels=4, deep_supervision=True):
+    def __init__(self, in_channels=3, out_channels=4):
         super().__init__()
-        self.deep_supervision = deep_supervision
-
-        # Encoder (Residual scSE blocks)
         self.enc1 = ResBlockWithscSE(in_channels, 64)
         self.pool1 = nn.MaxPool2d(2, 2)
         self.enc2 = ResBlockWithscSE(64, 128)
@@ -342,10 +294,8 @@ class ResAttentionUNet(nn.Module):
         self.enc4 = ResBlockWithscSE(256, 512)
         self.pool4 = nn.MaxPool2d(2, 2)
 
-        # Anisotropic Strip ASPP Bottleneck
-        self.bottleneck = StripASPPBottleneck(512, 512)
+        self.bottleneck = ASPPBottleneck(512, 512)
 
-        # Decoder with Additive Attention Gates
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.att4 = AttentionBlock(F_g=256, F_l=512, F_int=256)
         self.dec4 = ResBlockWithscSE(512 + 256, 256)
@@ -362,70 +312,49 @@ class ResAttentionUNet(nn.Module):
         self.att1 = AttentionBlock(F_g=32, F_l=64, F_int=32)
         self.dec1 = ResBlockWithscSE(64 + 32, 32)
 
-        # Primary Dense Segmentation Head
         self.final_conv = nn.Conv2d(32, out_channels, kernel_size=1)
+        self.cls_head = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(512, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(128, out_channels)
+        )
 
-        # Deep Supervision Heads (Auxiliary training heads for dec2 and dec3)
-        if self.deep_supervision:
-            self.ds_head3 = nn.Conv2d(128, out_channels, kernel_size=1)
-            self.ds_head2 = nn.Conv2d(64, out_channels, kernel_size=1)
+    def forward(self, x, return_cls=False):
+        e1 = self.enc1(x)
+        e2 = self.enc2(self.pool1(e1))
+        e3 = self.enc3(self.pool2(e2))
+        e4 = self.enc4(self.pool3(e3))
 
-        # Dual-Pooling Auxiliary Classification Head
-        self.cls_head = DualPoolClsHead(512, out_channels)
+        b = self.bottleneck(self.pool4(e4))
 
-    def forward(self, x, return_cls=False, return_ds=False):
-        # Encoder
-        e1 = self.enc1(x)                  # (B, 64, 128, 800)
-        e2 = self.enc2(self.pool1(e1))     # (B, 128, 64, 400)
-        e3 = self.enc3(self.pool2(e2))     # (B, 256, 32, 200)
-        e4 = self.enc4(self.pool3(e3))     # (B, 512, 16, 100)
-
-        # Bottleneck (8, 50)
-        b = self.bottleneck(self.pool4(e4)) # (B, 512, 8, 50)
-
-        # Decoder
         d4 = self.up4(b)
         x4 = self.att4(g=d4, x=e4)
-        d4 = self.dec4(torch.cat([d4, x4], dim=1)) # (B, 256, 16, 100)
+        d4 = self.dec4(torch.cat([d4, x4], dim=1))
 
         d3 = self.up3(d4)
         x3 = self.att3(g=d3, x=e3)
-        d3 = self.dec3(torch.cat([d3, x3], dim=1)) # (B, 128, 32, 200)
+        d3 = self.dec3(torch.cat([d3, x3], dim=1))
 
         d2 = self.up2(d3)
         x2 = self.att2(g=d2, x=e2)
-        d2 = self.dec2(torch.cat([d2, x2], dim=1)) # (B, 64, 64, 400)
+        d2 = self.dec2(torch.cat([d2, x2], dim=1))
 
         d1 = self.up1(d2)
         x1 = self.att1(g=d1, x=e1)
-        d1 = self.dec1(torch.cat([d1, x1], dim=1)) # (B, 32, 128, 800)
+        d1 = self.dec1(torch.cat([d1, x1], dim=1))
 
-        mask_logits = self.final_conv(d1)           # (B, 4, 128, 800)
-        cls_logits = self.cls_head(b) if return_cls else None
-
-        # Deep supervision during training
-        if self.training and self.deep_supervision and return_ds:
-            ds2 = F.interpolate(self.ds_head2(d2), size=x.shape[2:], mode='bilinear', align_corners=True)
-            ds3 = F.interpolate(self.ds_head3(d3), size=x.shape[2:], mode='bilinear', align_corners=True)
-            if return_cls:
-                return mask_logits, cls_logits, ds2, ds3
-            return mask_logits, ds2, ds3
-
+        mask_logits = self.final_conv(d1)
         if return_cls:
+            cls_logits = self.cls_head(b)
             return mask_logits, cls_logits
         return mask_logits
 
 
 class ComboLoss(nn.Module):
-    def __init__(
-        self,
-        bce_weight=1.0,
-        dice_weight=1.0,
-        use_focal=True,
-        gamma=2.0,
-        alpha=(0.75, 0.85, 0.50, 0.60),
-        channel_weights=(1.5, 2.5, 1.0, 1.2),
-    ):
+    def __init__(self, bce_weight=1.0, dice_weight=1.0, use_focal=True, gamma=2.0, alpha=(0.75, 0.85, 0.50, 0.60), channel_weights=(1.5, 2.5, 1.0, 1.2)):
         super().__init__()
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
@@ -587,12 +516,11 @@ def train_ddp():
             images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad()
             with torch.amp.autocast('cuda', enabled=(device.type == 'cuda')):
-                mask_logits, cls_logits, ds2, ds3 = model(images, return_cls=True, return_ds=True)
+                mask_logits, cls_logits = model(images, return_cls=True)
                 mask_loss = criterion(mask_logits, masks)
                 cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
                 cls_loss = F.binary_cross_entropy_with_logits(cls_logits, cls_targets)
-                ds_loss = 0.2 * criterion(ds2, masks) + 0.1 * criterion(ds3, masks)
-                total_loss = mask_loss + 0.3 * cls_loss + ds_loss
+                total_loss = mask_loss + 0.3 * cls_loss
 
             scaler.scale(total_loss).backward()
             scaler.unscale_(optimizer)
@@ -618,7 +546,7 @@ def train_ddp():
                             'resattunet/step': global_step
                         }, commit=False)
 
-            del images, masks, mask_logits, cls_logits, ds2, ds3, mask_loss, cls_targets, cls_loss, ds_loss, total_loss
+            del images, masks, mask_logits, cls_logits, mask_loss, cls_targets, cls_loss, total_loss
 
         avg_train_loss = train_loss / len(train_loader)
 
@@ -635,7 +563,7 @@ def train_ddp():
             with torch.amp.autocast('cuda', enabled=(device.type == 'cuda')):
                 for images, masks in val_loader:
                     images, masks = images.to(device), masks.to(device)
-                    mask_logits, cls_logits = model(images, return_cls=True, return_ds=False)
+                    mask_logits, cls_logits = model(images, return_cls=True)
                     v_loss = criterion(mask_logits, masks)
                     cls_targets = (masks.flatten(2).sum(dim=2) > 0).float()
                     cls_loss_v = F.binary_cross_entropy_with_logits(cls_logits, cls_targets)
