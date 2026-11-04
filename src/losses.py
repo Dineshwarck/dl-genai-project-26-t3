@@ -121,7 +121,7 @@ class ComboLoss(nn.Module):
         mask_empty=True,
     ):
         """
-        ComboLoss combining Focal Loss (or BCEWithLogitsLoss) and SoftDiceLoss.
+        ComboLoss combining Focal Loss and SoftDiceLoss.
 
         Args:
             bce_weight: Weight multiplier for the pixel loss (Focal or BCE).

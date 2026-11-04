@@ -62,7 +62,7 @@ class TestDefectDataset(Dataset):
 DEFAULT_CLS_GATES = {
     0: 0.25,  # defect_a: lower gate to preserve small inclusions/pitting
     1: 0.20,  # defect_b: sensitive gate for rare edge cracks/tears
-    2: 0.35,  # defect_c: canonical gate to balance foreground dice and clean steel (crazing/scaling)
+    2: 0.40,  # defect_c: calibrated gate to suppress rolling scale false alarms
     3: 0.35,  # defect_d: canonical gate for surface patches
 }
 
@@ -259,9 +259,9 @@ def generate_submission(
         print(f"Limited to {sample_limit} images for fast testing")
 
     # 3. Setup Test DataLoader
-    num_workers = 0 if os.name == 'nt' else 2
+    num_workers = 0
     test_dataset = TestDefectDataset(unique_image_ids, test_image_dir)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False)
 
     # 4. Load Models
     models = [load_single_model(p, device) for p in model_paths]

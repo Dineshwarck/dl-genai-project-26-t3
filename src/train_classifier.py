@@ -81,17 +81,19 @@ def train_classifier(
     train_ds = SurfaceDefectDataset(train_df, image_dir=image_dir, transforms=train_tf)
     val_ds = SurfaceDefectDataset(val_df, image_dir=image_dir, transforms=val_tf)
 
-    num_workers = 2 if (torch.cuda.is_available() and os.name != 'nt') else 0
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    num_workers = 0
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False)
 
     # 3. Model, Weighted BCE Loss, Optimizer
     model = SurfaceDefectClassifier(in_channels=3, num_classes=4).to(device)
 
-    # Multiple-GPU check
-    if torch.cuda.is_available() and torch.cuda.device_count()>1:
+    use_data_parallel = False
+    if use_data_parallel and torch.cuda.is_available() and torch.cuda.device_count() > 1:
         print(f"Utilizing {torch.cuda.device_count()} GPUs with DataParallel!")
         model = nn.DataParallel(model)
+    else:
+        print(f"Training on single device: {device}")
 
     # Positive class weighting: penalizes missing rare defects (Defect B gets 8x, Defect A gets 3x)
     pos_weights = torch.tensor([3.0, 8.0, 1.2, 1.8], device=device)
