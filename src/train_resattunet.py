@@ -392,7 +392,15 @@ def train_ddp():
     if is_distributed:
         torch.cuda.set_device(local_rank)
         backend = "nccl" if dist.is_nccl_available() else "gloo"
-        dist.init_process_group(backend=backend, init_method="env://", rank=rank, world_size=world_size)
+        init_kwargs = {
+            "backend": backend,
+            "init_method": "env://",
+            "rank": rank,
+            "world_size": world_size,
+        }
+        if backend == "nccl" and torch.cuda.is_available():
+            init_kwargs["device_id"] = torch.device(f"cuda:{local_rank}")
+        dist.init_process_group(**init_kwargs)
 
     resolve_paths()
 
@@ -684,17 +692,20 @@ def train_ddp():
         except Exception:
             pass
 
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
     if is_distributed:
-        dist.barrier()
         dist.destroy_process_group()
 
     if rank == 0:
         if run is not None:
             try:
                 run.finish()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Rank 0] W&B finish warning: {e}")
         print(f"\n[Rank 0] Training complete. Best official score: {best_score:.4f}")
+        sys.stdout.flush()
 
 
 if __name__ == '__main__':
