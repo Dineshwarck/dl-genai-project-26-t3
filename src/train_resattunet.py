@@ -55,6 +55,7 @@ class CFG:
     WANDB_PROJECT = '24F2004781-t32026'
     WANDB_ENTITY = 'dineshwar-developer-indian-institute-of-technology'
     RESUME_IF_CHECKPOINT_EXISTS = True
+    FORCE_RETRAIN = True
 
 
 def resolve_paths():
@@ -398,9 +399,13 @@ def train_ddp():
             "rank": rank,
             "world_size": world_size,
         }
-        if backend == "nccl" and torch.cuda.is_available():
-            init_kwargs["device_id"] = torch.device(f"cuda:{local_rank}")
-        dist.init_process_group(**init_kwargs)
+        try:
+            if backend == "nccl" and torch.cuda.is_available():
+                init_kwargs["device_id"] = torch.device(f"cuda:{local_rank}")
+            dist.init_process_group(**init_kwargs)
+        except TypeError:
+            init_kwargs.pop("device_id", None)
+            dist.init_process_group(**init_kwargs)
 
     resolve_paths()
 
@@ -458,7 +463,12 @@ def train_ddp():
 
     # Resume support
     ckpt_path = 'models/best_resattunet.pth'
-    if CFG.RESUME_IF_CHECKPOINT_EXISTS and os.path.exists(ckpt_path):
+    if getattr(CFG, 'FORCE_RETRAIN', False):
+        start_epoch = 1
+        best_score = -1.0
+        if rank == 0:
+            print(f"  >> [Rank 0] CFG.FORCE_RETRAIN is True: Training fresh ResAttentionUNet for all {CFG.EPOCHS} epochs from scratch.")
+    elif CFG.RESUME_IF_CHECKPOINT_EXISTS and os.path.exists(ckpt_path):
         if rank == 0:
             print(f"  >> [Rank 0] Resuming weights from existing checkpoint: {ckpt_path}")
         try:
