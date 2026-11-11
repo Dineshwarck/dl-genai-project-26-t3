@@ -24,3 +24,6 @@ wandb/
 data/
 submission.csv
 val_predictions.csv
+
+# Scratch & Temporary Scripts
+scratch/
