@@ -23,10 +23,10 @@ class DoubleConv(nn.Module):
 
 class AttentionBlock(nn.Module):
     """
-    Additive Attention Gate (Oktay et al., 2018).
-    Gates low-level encoder skip features x using coarse-level decoder features g,
-    filtering out background surface reflections while preserving genuine defect activations.
-    Trained 100% from scratch with no pre-trained weights.
+    Additive Attention Gate with Residual Skip Protection (Milestone 4 Upgrade).
+    Gates low-level encoder skip features x using coarse-level decoder features g.
+    Applies residual attention x * (1.0 + psi) to prevent small 1-100 px defect features
+    from being completely suppressed when coarse decoder representations are weak.
     """
     def __init__(self, F_g, F_l, F_int):
         super().__init__()
@@ -50,7 +50,7 @@ class AttentionBlock(nn.Module):
         x1 = self.W_x(x)
         psi = self.relu(g1 + x1)
         psi = self.psi(psi)
-        return x * psi
+        return x * (1.0 + psi)
 
 
 class ScratchUNet(nn.Module):
@@ -228,27 +228,39 @@ class SEResBlock(nn.Module):
         return self.relu(out + residual)
 
 
+def _format_rate(r):
+    return (r, r) if isinstance(r, int) else (int(r[0]), int(r[1]))
+
+
 class ASPPBottleneck(nn.Module):
-    """Atrous Spatial Pyramid Pooling (ASPP) Bottleneck with multi-scale dilated convolutions."""
-    def __init__(self, in_channels, out_channels, atrous_rates=(6, 12, 18)):
+    """Atrous Spatial Pyramid Pooling (ASPP) Bottleneck with aspect-ratio matched dilated convolutions.
+    
+    Default rates ((1, 4), (2, 8), (3, 16)) are tailored for the 1:6.25 steel strip aspect ratio
+    (Milestone 3 & 4 Upgrade) and fit comfortably within the 8x50 bottleneck feature map without boundary padding artifacts.
+    """
+    def __init__(self, in_channels, out_channels, atrous_rates=((1, 4), (2, 8), (3, 16))):
         super().__init__()
+        r0 = _format_rate(atrous_rates[0])
+        r1 = _format_rate(atrous_rates[1])
+        r2 = _format_rate(atrous_rates[2])
+
         self.b0 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
         self.b1 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=atrous_rates[0], dilation=atrous_rates[0], bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=r0, dilation=r0, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
         self.b2 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=atrous_rates[1], dilation=atrous_rates[1], bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=r1, dilation=r1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
         self.b3 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=atrous_rates[2], dilation=atrous_rates[2], bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=r2, dilation=r2, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
@@ -294,8 +306,11 @@ class ResBlockWithscSE(nn.Module):
 
 
 class ResAttentionUNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=4):
+    """Upgraded ResAttentionUNet with Residual Attention, Aspect-Ratio ASPP, and Dynamic 1ch/3ch Input Adaptation."""
+    def __init__(self, in_channels=1, out_channels=4, atrous_rates=((1, 4), (2, 8), (3, 16))):
         super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.enc1 = ResBlockWithscSE(in_channels, 64)
         self.pool1 = nn.MaxPool2d(2, 2)
         self.enc2 = ResBlockWithscSE(64, 128)
@@ -305,7 +320,7 @@ class ResAttentionUNet(nn.Module):
         self.enc4 = ResBlockWithscSE(256, 512)
         self.pool4 = nn.MaxPool2d(2, 2)
 
-        self.bottleneck = ASPPBottleneck(512, 512)
+        self.bottleneck = ASPPBottleneck(512, 512, atrous_rates=atrous_rates)
 
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.att4 = AttentionBlock(F_g=256, F_l=512, F_int=256)
@@ -334,6 +349,13 @@ class ResAttentionUNet(nn.Module):
         )
 
     def forward(self, x, return_cls=False):
+        # Dynamic channel adaptation: seamlessly handles both 1-channel and 3-channel inputs
+        if x.shape[1] != self.in_channels:
+            if self.in_channels == 1 and x.shape[1] == 3:
+                x = x.mean(dim=1, keepdim=True)
+            elif self.in_channels == 3 and x.shape[1] == 1:
+                x = x.repeat(1, 3, 1, 1)
+
         e1 = self.enc1(x)
         e2 = self.enc2(self.pool1(e1))
         e3 = self.enc3(self.pool2(e2))

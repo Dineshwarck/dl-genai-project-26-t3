@@ -58,19 +58,14 @@ class SoftDiceLoss(nn.Module):
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=None, gamma=2.0, reduction='mean'):
+    def __init__(self, alpha=None, gamma=2.0, pos_weight=None, reduction='mean'):
         """
-        Multi-label Binary Focal Loss.
-        FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
+        Multi-label Binary Focal Loss with positive pixel-level weighting (Milestone 4 Upgrade).
+        FL(p_t) = -alpha_t * pos_weight * (1 - p_t)^gamma * log(p_t)
 
         Dramatically down-weights easy background pixels ((1 - p_t)^2 ≈ 0.00001),
-        preventing clean steel from drowning out rare defects (defect_a and defect_b).
-
-        Args:
-            alpha: Balancing factor for positive vs negative pixels per channel.
-                   Default: (0.75, 0.85, 0.50, 0.60)
-            gamma: Focusing parameter (default 2.0).
-            reduction: 'mean', 'sum', or 'none'.
+        preventing clean steel from drowning out rare defects (defect_a and defect_b),
+        while pos_weight accelerates boundary convergence against the 2,192:1 pixel imbalance.
         """
         super().__init__()
         self.gamma = gamma
@@ -84,6 +79,16 @@ class FocalLoss(nn.Module):
             if alpha.ndim == 1 and len(alpha) > 1:
                 alpha = alpha.view(1, -1, 1, 1)
         self.register_buffer('alpha', alpha)
+
+        if pos_weight is not None:
+            if not isinstance(pos_weight, torch.Tensor):
+                if isinstance(pos_weight, (int, float)):
+                    pos_weight = torch.tensor([float(pos_weight)])
+                else:
+                    pos_weight = torch.tensor(pos_weight, dtype=torch.float32)
+            if pos_weight.ndim == 1 and len(pos_weight) > 1:
+                pos_weight = pos_weight.view(1, -1, 1, 1)
+        self.register_buffer('pos_weight', pos_weight)
 
     def forward(self, logits, targets):
         probs = torch.sigmoid(logits)
@@ -99,6 +104,11 @@ class FocalLoss(nn.Module):
             focal_loss = alpha_t * focal_weight * bce
         else:
             focal_loss = focal_weight * bce
+
+        if self.pos_weight is not None:
+            pw = self.pos_weight.to(device=logits.device, dtype=logits.dtype)
+            pw_factor = targets * pw + (1.0 - targets) * 1.0
+            focal_loss = focal_loss * pw_factor
 
         if self.reduction == 'mean':
             return focal_loss.mean()
@@ -141,7 +151,7 @@ class ComboLoss(nn.Module):
         self.use_focal = use_focal
 
         if use_focal:
-            self.pixel_loss_fn = FocalLoss(alpha=alpha, gamma=gamma)
+            self.pixel_loss_fn = FocalLoss(alpha=alpha, gamma=gamma, pos_weight=pos_weight)
         else:
             if pos_weight is not None:
                 if not isinstance(pos_weight, torch.Tensor):

@@ -172,3 +172,53 @@ def get_defect_aware_sampler(
         replacement=True,
     )
     return sampler
+
+
+def get_bounded_sqrt_sampler(df, max_cap=5.0, num_samples=None):
+    """
+    Creates a PyTorch WeightedRandomSampler using the Milestone 4 Bounded Square-Root formula:
+        w_g = min(sqrt(n_clean / n_g), max_cap)
+    
+    Enriches rare defect classes (e.g. defect_b by ~2.31x) while capping oversampling at max_cap
+    to prevent overfitting on tiny combination groups.
+
+    Args:
+        df: DataFrame in raw or pivoted format.
+        max_cap: Maximum allowable sampling multiplier (default 5.0).
+        num_samples: Total draws per epoch (default len(df)).
+
+    Returns:
+        WeightedRandomSampler to pass into DataLoader(..., sampler=sampler)
+    """
+    if 'defect_type' in df.columns:
+        pivoted = df.pivot(
+            index='image_id', columns='defect_type', values='mask_rle'
+        ).reset_index()
+    else:
+        pivoted = df.copy()
+
+    def make_sig(row):
+        active = [c for c in DEFECT_CLASSES if pd.notna(row.get(c)) and str(row.get(c)).strip() != '']
+        if len(active) == 0:
+            return 'clean'
+        return '+'.join(sorted(active))
+
+    combos = pivoted.apply(make_sig, axis=1)
+    combo_counts = combos.value_counts()
+    n_clean = combo_counts.get('clean', 1)
+
+    group_weights = {}
+    for grp, cnt in combo_counts.items():
+        w = min(np.sqrt(n_clean / max(cnt, 1)), max_cap)
+        group_weights[grp] = float(w)
+
+    sample_weights = combos.map(group_weights).values.astype(np.float64)
+
+    if num_samples is None:
+        num_samples = len(pivoted)
+
+    return torch.utils.data.WeightedRandomSampler(
+        weights=torch.tensor(sample_weights, dtype=torch.double),
+        num_samples=num_samples,
+        replacement=True,
+    )
