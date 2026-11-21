@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+<rect width="980" height="520" fill="#ffffff" />
+<rect x="90" y="75" width="630" height="370" fill="#f8fafc" rx="4" />
+<text x="405.0" y="32" text-anchor="middle" font-size="18" font-weight="bold" fill="#0f172a">W&B Training & Validation Loss Convergence Across 40 Epochs</text>
+<text x="405.0" y="52" text-anchor="middle" font-size="12" fill="#64748b">Weights & Biases Project: dineshwar-developer-indian-institute-of-technology/24F2004781-t32026 (3 Multi-Label Architectures)</text>
+<line x1="90" y1="445.0" x2="720" y2="445.0" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="449.0" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.40</text>
+<line x1="90" y1="383.3333333333333" x2="720" y2="383.3333333333333" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="387.3333333333333" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.55</text>
+<line x1="90" y1="321.6666666666667" x2="720" y2="321.6666666666667" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="325.6666666666667" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.70</text>
+<line x1="90" y1="260.0" x2="720" y2="260.0" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="264.0" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.85</text>
+<line x1="90" y1="198.33333333333334" x2="720" y2="198.33333333333334" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="202.33333333333334" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">1.00</text>
+<line x1="90" y1="136.66666666666674" x2="720" y2="136.66666666666674" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="140.66666666666674" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">1.15</text>
+<line x1="90" y1="75.0" x2="720" y2="75.0" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="79.0" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">1.30</text>
+<line x1="90.0" y1="75" x2="90.0" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="90.0" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 1</text>
+<line x1="154.6153846153846" y1="75" x2="154.6153846153846" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="154.6153846153846" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 5</text>
+<line x1="235.3846153846154" y1="75" x2="235.3846153846154" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="235.3846153846154" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 10</text>
+<line x1="316.1538461538462" y1="75" x2="316.1538461538462" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="316.1538461538462" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 15</text>
+<line x1="396.9230769230769" y1="75" x2="396.9230769230769" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="396.9230769230769" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 20</text>
+<line x1="477.69230769230774" y1="75" x2="477.69230769230774" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="477.69230769230774" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 25</text>
+<line x1="558.4615384615385" y1="75" x2="558.4615384615385" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="558.4615384615385" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 30</text>
+<line x1="639.2307692307693" y1="75" x2="639.2307692307693" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="639.2307692307693" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 35</text>
+<line x1="720.0" y1="75" x2="720.0" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="720.0" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 40</text>
+<rect x="90" y="75" width="630" height="370" fill="none" stroke="#cbd5e1" stroke-width="1.5" />
+<text x="405.0" y="500" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">Training Epoch</text>
+<text transform="rotate(-90)" x="-260.0" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">Multi-Task ComboLoss (Focal + Dice)</text>
+<polyline fill="none" stroke="#16a34a" stroke-width="2.5"  points="90.0,120.3 106.2,137.0 122.3,150.1 138.5,168.0 154.6,187.2 170.8,199.9 186.9,207.5 203.1,215.0 219.2,220.0 235.4,227.2 251.5,231.9 267.7,234.5 283.8,240.4 300.0,243.6 316.2,245.8 332.3,250.3 348.5,255.6 364.6,258.4 380.8,260.6 396.9,264.2 413.1,266.9 429.2,270.9 445.4,274.7 461.5,276.3 477.7,278.6 493.8,279.4 510.0,282.4 526.2,284.1 542.3,283.3 558.5,287.1 574.6,287.8 590.8,289.2 606.9,290.4 623.1,292.1 639.2,293.8 655.4,291.1 671.5,290.6 687.7,293.5 703.8,294.5 720.0,291.7" />
+<circle cx="90.0" cy="120.3" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="170.8" cy="199.9" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="251.5" cy="231.9" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="332.3" cy="250.3" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="413.1" cy="266.9" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="493.8" cy="279.4" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="574.6" cy="287.8" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="655.4" cy="291.1" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="79" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="91" x2="774" y2="91" stroke="#16a34a" stroke-width="2.6"  />
+<text x="782" y="95" font-size="11" font-weight="500" fill="#1e293b">ResAttentionUNet (Train)</text>
+<polyline fill="none" stroke="#16a34a" stroke-width="2.0" stroke-dasharray="6,4" points="90.0,141.7 106.2,148.2 122.3,158.0 138.5,154.6 154.6,172.2 170.8,180.9 186.9,189.0 203.1,191.4 219.2,194.3 235.4,194.2 251.5,198.7 267.7,199.8 283.8,199.1 300.0,198.0 316.2,198.5 332.3,195.3 348.5,202.8 364.6,205.0 380.8,197.2 396.9,197.7 413.1,205.3 429.2,205.8 445.4,206.0 461.5,204.5 477.7,207.0 493.8,206.4 510.0,201.0 526.2,207.4 542.3,206.9 558.5,205.4 574.6,207.1 590.8,206.4 606.9,207.3 623.1,207.8 639.2,208.1 655.4,208.8 671.5,207.5 687.7,208.3 703.8,208.4 720.0,206.9" />
+<circle cx="90.0" cy="141.7" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="170.8" cy="180.9" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="251.5" cy="198.7" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="332.3" cy="195.3" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="413.1" cy="205.3" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="493.8" cy="206.4" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="574.6" cy="207.1" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="655.4" cy="208.8" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="109" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="121" x2="774" y2="121" stroke="#16a34a" stroke-width="2.6" stroke-dasharray="6,4" />
+<text x="782" y="125" font-size="11" font-weight="500" fill="#1e293b">ResAttentionUNet (Val)</text>
+<polyline fill="none" stroke="#dc2626" stroke-width="2.5"  points="90.0,166.1 106.2,232.8 122.3,275.0 138.5,296.5 154.6,313.2 170.8,324.7 186.9,335.3 203.1,342.3 219.2,350.8 235.4,355.2 251.5,358.9 267.7,362.3 283.8,362.3 300.0,365.0 316.2,365.7" />
+<circle cx="90.0" cy="166.1" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="106.2" cy="232.8" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="122.3" cy="275.0" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="138.5" cy="296.5" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="154.6" cy="313.2" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="170.8" cy="324.7" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="186.9" cy="335.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="203.1" cy="342.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="219.2" cy="350.8" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="235.4" cy="355.2" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="251.5" cy="358.9" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="267.7" cy="362.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="283.8" cy="362.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="300.0" cy="365.0" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="316.2" cy="365.7" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="139" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="151" x2="774" y2="151" stroke="#dc2626" stroke-width="2.6"  />
+<text x="782" y="155" font-size="11" font-weight="500" fill="#1e293b">PretrainedResNet34 (Train)</text>
+<polyline fill="none" stroke="#dc2626" stroke-width="2.0" stroke-dasharray="6,4" points="90.0,259.9 106.2,304.4 122.3,334.6 138.5,350.9 154.6,361.1 170.8,367.1 186.9,372.4 203.1,378.5 219.2,379.4 235.4,382.6 251.5,384.3 267.7,387.6 283.8,389.3 300.0,388.3 316.2,388.7" />
+<circle cx="90.0" cy="259.9" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="106.2" cy="304.4" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="122.3" cy="334.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="138.5" cy="350.9" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="154.6" cy="361.1" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="170.8" cy="367.1" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="186.9" cy="372.4" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="203.1" cy="378.5" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="219.2" cy="379.4" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="235.4" cy="382.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="251.5" cy="384.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="267.7" cy="387.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="283.8" cy="389.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="300.0" cy="388.3" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="316.2" cy="388.7" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="169" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="181" x2="774" y2="181" stroke="#dc2626" stroke-width="2.6" stroke-dasharray="6,4" />
+<text x="782" y="185" font-size="11" font-weight="500" fill="#1e293b">PretrainedResNet34 (Val)</text>
+<polyline fill="none" stroke="#2563eb" stroke-width="2.5"  points="90.0,110.6 106.2,167.4 122.3,226.9 138.5,254.9 154.6,272.4 170.8,286.9 186.9,296.8 203.1,305.7 219.2,311.8 235.4,322.1 251.5,325.3 267.7,332.3 283.8,341.6 300.0,345.3 316.2,351.3 332.3,356.3 348.5,361.1 364.6,367.9 380.8,371.6 396.9,376.7 413.1,380.2 429.2,384.3 445.4,386.5 461.5,393.4 477.7,393.9 493.8,395.7 510.0,398.0 526.2,400.4 542.3,397.1 558.5,402.1" />
+<circle cx="90.0" cy="110.6" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="138.5" cy="254.9" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="186.9" cy="296.8" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="235.4" cy="322.1" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="283.8" cy="341.6" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="332.3" cy="356.3" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="380.8" cy="371.6" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="429.2" cy="384.3" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="477.7" cy="393.9" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="526.2" cy="400.4" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="199" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="211" x2="774" y2="211" stroke="#2563eb" stroke-width="2.6"  />
+<text x="782" y="215" font-size="11" font-weight="500" fill="#1e293b">ScratchUNet (Train)</text>
+<polyline fill="none" stroke="#2563eb" stroke-width="2.0" stroke-dasharray="6,4" points="90.0,178.4 106.2,247.0 122.3,246.5 138.5,294.1 154.6,303.4 170.8,328.3 186.9,337.5 203.1,337.8 219.2,348.4 235.4,348.2 251.5,363.6 267.7,362.4 283.8,364.7 300.0,372.3 316.2,376.2 332.3,377.8 348.5,379.6 364.6,383.7 380.8,388.6 396.9,384.9 413.1,389.4 429.2,393.2 445.4,395.1 461.5,398.4 477.7,400.0 493.8,399.3 510.0,402.3 526.2,399.9 542.3,402.8 558.5,401.9" />
+<circle cx="90.0" cy="178.4" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="138.5" cy="294.1" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="186.9" cy="337.5" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="235.4" cy="348.2" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="283.8" cy="364.7" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="332.3" cy="377.8" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="380.8" cy="388.6" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="429.2" cy="393.2" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="477.7" cy="400.0" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="526.2" cy="399.9" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="229" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="241" x2="774" y2="241" stroke="#2563eb" stroke-width="2.6" stroke-dasharray="6,4" />
+<text x="782" y="245" font-size="11" font-weight="500" fill="#1e293b">ScratchUNet (Val)</text>
+</svg>

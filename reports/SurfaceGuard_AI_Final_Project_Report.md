@@ -311,26 +311,35 @@ Where:
 
 ---
 
-### 6.2 Training Dynamics & Convergence Analysis (W&B Logs)
+### 6.2 Training Dynamics & Convergence Analysis (Weights & Biases Visualizations)
 
-Training histories logged to Weights & Biases (`24F2004781-t32026 / dineshwar-developer-indian-institute-of-technology`) demonstrated distinct optimization trajectories across the three architectures:
+The complete training and validation trajectories across all three architectures were tracked live using **Weights & Biases** under project [`24F2004781-t32026`](https://wandb.ai/dineshwar-developer-indian-institute-of-technology/24F2004781-t32026) (`dineshwar-developer-indian-institute-of-technology`). The figures below present the loss convergence, official competition score progression, and foreground dice dynamics extracted directly from the W&B run logs:
 
-```text
-Training Loss & Metric Progression Across 40 Epochs:
-Loss Convergence:
-ScratchUNet      : [Epoch 01: 0.842] -------------> [Epoch 40: 0.318]
-PretrainedResNet : [Epoch 01: 0.589] -----> [Phase 2] ---------> [Epoch 40: 0.281]
-ResAttentionUNet : [Epoch 01: 0.694] ------------------> [Epoch 40: 0.214] (Best)
+#### 6.2.1 Multi-Task ComboLoss Convergence
+![W&B Training & Validation Loss Convergence](figures/wandb_loss_convergence.svg)
 
-Foreground Dice Progression:
-ScratchUNet      : [Epoch 01: 0.221] -------------> [Epoch 40: 0.512]
-PretrainedResNet : [Epoch 01: 0.485] (Fast Warmup) -> [Epoch 40: 0.602]
-ResAttentionUNet : [Epoch 01: 0.312] ------------------> [Epoch 40: 0.618 / 0.719*]
-(*With Two-Stage Consensus Gating and Calibrated Post-Processing)
-```
+*Figure 6.1: Weights & Biases multi-task ComboLoss (Focal Loss + Soft Dice) trajectories comparing Model 1 (ScratchUNet, blue), Model 2 (ResAttentionUNet DDP, green), and Model 3 (PretrainedResNet34, red). Solid lines represent training loss; dashed lines represent validation loss.*
 
-1. **Cold-Start Convergence:** `PretrainedResNet34UNet` converged rapidly in Epoch 1 ($\text{FG Dice} = 0.4850$) compared to `ScratchUNet` ($0.2210$), demonstrating the value of pre-trained ImageNet weights during early training.
-2. **Asymptotic Expressiveness:** By Epoch 25, `ResAttentionUNet` surpassed the pre-trained model. Its specialized anisotropic strip convolutions and attention gates provided superior inductive bias for the non-square $128 \times 800$ geometry, reaching the lowest final validation loss ($0.214$).
+#### 6.2.2 Official Competition Score Progression
+![W&B Official Score Progression](figures/wandb_official_score_progression.svg)
+
+*Figure 6.2: Progression of the official competition evaluation metric ($0.70 \cdot \text{Dice} + 0.20 \cdot \text{FPSilence} + 0.10 \cdot \text{EmptyAcc}$) evaluated on the validation holdout across epochs.*
+
+#### 6.2.3 Foreground Dice Overlap Dynamics
+![W&B Foreground Dice Progression](figures/wandb_foreground_dice_progression.svg)
+
+*Figure 6.3: Mean Foreground Dice score over positive defect regions across all four defect classes throughout training.*
+
+#### 6.2.4 In-Depth Convergence Analysis
+1. **Cold-Start Behavior & Transfer Learning Warmup:**
+   - **`PretrainedResNet34UNet` (Run `b2dt23w8`):** Benefited from ImageNet-1K pretrained visual primitives, achieving rapid initialization in Phase 1 (Epoch 1 Foreground Dice = $0.3781$, Official Score = $0.5127$). When unfreezing the encoder in Phase 2 with differential learning rates, it smoothly improved to a peak official score of **$0.6647$**.
+   - **`ScratchUNet` (Run `2q8cuec0`):** Exhibited classic cold-start behavior due to randomly initialized convolutional weights, starting with a lower initial Dice of $0.1653$ (Official Score: $0.3666$) before steadily climbing over 30 epochs to $0.6984$.
+2. **Asymptotic Superiority of ResAttentionUNet:**
+   - **`ResAttentionUNet` (Run `j8lagz9s`):** While trained entirely from scratch, the residual scSE blocks and anisotropic strip convolutions in the ASPP bottleneck provided powerful inductive bias tailored specifically to the $128 \times 800$ rolling sheet aspect ratio. It sustained strong monotonic progress across all 40 epochs:
+     - Epoch 01: $\text{Loss} = 1.1899, \quad \text{Dice} = 0.1669, \quad \text{Score} = 0.2859$
+     - Epoch 20: $\text{Loss} = 0.8912, \quad \text{Dice} = 0.5214, \quad \text{Score} = 0.6482$
+     - Epoch 40: $\text{Loss} = 0.7728, \quad \text{Dice} = 0.6094, \quad \text{Score} = \mathbf{0.7185}$ (FP Silence: $0.9989$)
+   - ResAttentionUNet achieved the highest standalone official score (**$0.7185$**), surpassing both the classical baseline and the transfer learning model without requiring external ImageNet pretraining.
 
 ---
 
@@ -358,7 +367,18 @@ The table below summarizes performance across all three architectures, evaluated
 
 ### 6.4 Post-Processing & Two-Stage Consensus Analysis
 
-The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Kaggle was driven by the post-processing and gating innovations developed in Milestones 4 and 5:
+The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Kaggle was driven by the post-processing and gating innovations developed in Milestones 4 and 5.
+
+#### 6.4.1 Validation Holdout Error & Metric Distributions
+![Per-Class Metrics Comparison](validation_analysis/per_class_metrics_comparison.png)
+
+*Figure 6.4: Per-class validation performance breakdown demonstrating balanced multi-class detection across defect types A, B, C, and D.*
+
+![Probability Distributions and ROC Curves](validation_analysis/probability_distributions_and_roc.png)
+
+*Figure 6.5: Validation probability distribution histograms and Receiver Operating Characteristic (ROC) curves showing clean sheet vs. defect pixel separation.*
+
+#### 6.4.2 Core Engineering Innovations:
 
 1. **Two-Stage Consensus Gating:** An auxiliary `SurfaceDefectClassifier` (5-stage residual network with scSE, validation score 0.6817) was blended with the segmenter's auxiliary classification head:
    $$P_{\text{consensus}} = 0.5 \cdot P_{\text{classifier}} + 0.5 \cdot P_{\text{segmenter\_cls}}$$
