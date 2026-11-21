@@ -59,27 +59,35 @@ class CFG:
 
 
 def resolve_paths():
-    csv_candidates = [
-        '/kaggle/input/competitions/industrial-surface-defect-detection/public/train.csv',
-        '/kaggle/input/industrial-surface-defect-detection/public/train.csv',
-        '/kaggle/input/industrial-surface-defect-detection/train.csv',
-        'data/train.csv'
-    ]
-    for cand in csv_candidates:
-        if os.path.exists(cand):
-            CFG.DATA_CSV = cand
-            break
+    """Directly locate competition dataset in /kaggle/input without candidate guessing."""
+    import glob
 
-    img_candidates = [
-        '/kaggle/input/competitions/industrial-surface-defect-detection/public/train',
-        '/kaggle/input/industrial-surface-defect-detection/public/train',
-        '/kaggle/input/industrial-surface-defect-detection/train',
-        'data/train'
-    ]
-    for cand in img_candidates:
-        if os.path.exists(cand):
-            CFG.IMAGE_DIR = cand
-            break
+    # 1. Search directly inside /kaggle/input
+    kaggle_csvs = glob.glob('/kaggle/input/**/public/train.csv', recursive=True) or \
+                  glob.glob('/kaggle/input/**/train.csv', recursive=True)
+
+    if kaggle_csvs:
+        base_dir = os.path.dirname(kaggle_csvs[0])
+        CFG.DATA_CSV = os.path.join(base_dir, 'train.csv')
+        CFG.IMAGE_DIR = os.path.join(base_dir, 'train')
+        CFG.SAMPLE_SUB_CSV = os.path.join(base_dir, 'sample_submission.csv')
+        CFG.TEST_IMAGE_DIR = os.path.join(base_dir, 'test')
+        print(f"[Kaggle Input] Located competition data directly at: {base_dir}")
+    elif os.path.exists('data/train.csv'):
+        CFG.DATA_CSV = 'data/train.csv'
+        CFG.IMAGE_DIR = 'data/train'
+        CFG.SAMPLE_SUB_CSV = 'data/sample_submission.csv'
+        CFG.TEST_IMAGE_DIR = 'data/test'
+        print(f"[Local Session] Using local workspace paths: {CFG.DATA_CSV}")
+    else:
+        local_csvs = glob.glob('**/train.csv', recursive=True)
+        if local_csvs:
+            base_dir = os.path.dirname(local_csvs[0])
+            CFG.DATA_CSV = os.path.join(base_dir, 'train.csv')
+            CFG.IMAGE_DIR = os.path.join(base_dir, 'train')
+            CFG.SAMPLE_SUB_CSV = os.path.join(base_dir, 'sample_submission.csv')
+            CFG.TEST_IMAGE_DIR = os.path.join(base_dir, 'test')
+            print(f"[Fallback Search] Located data at: {base_dir}")
 
 
 def rle_to_mask(rle_string, height=128, width=800):
