@@ -351,7 +351,7 @@ The table below summarizes performance across all three architectures, evaluated
 | :--- | :---: | :---: | :---: | :---: |
 | **Total Parameters** | 31,350,920 | **18,263,032** | 18.26M + 11.19M (Clf) | 24,430,532 |
 | **Model Size on Disk** | $119.6\text{ MB}$ | **$69.7\text{ MB}$** | $69.7\text{ MB} + 42.7\text{ MB}$ | $93.2\text{ MB}$ |
-| **Training Time (40 Epochs)** | $48\text{ mins}$ | $58\text{ mins}$ | $58\text{ mins}$ | $44\text{ mins}$ |
+| **Training Time (40 Epochs)** | $60\text{ mins}$ | $180\text{ mins}$ | $220\text{ mins}$ | $100\text{ mins}$ |
 | **Inference Latency (per img)**| **$8.2\text{ ms}$** | $12.4\text{ ms}$ | $16.8\text{ ms}$ (with 4-way TTA) | $9.8\text{ ms}$ |
 | **Defect A Dice (Pitting)** | $0.462$ | $0.548$ | **$0.589$** | $0.512$ |
 | **Defect B Dice (Edge Tears)** | $0.214$ | $0.412$ | **$0.490$** | $0.384$ |
@@ -405,9 +405,11 @@ The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Ka
 - **Kaggle Kernel Memory Exhaustion (Exit Code 137) & Multi-GPU Acceleration:** Standard multi-threading via `torch.nn.DataParallel` was found to leak host RAM catastrophically across POSIX worker threads due to Linux glibc multi-arena heap fragmentation (accumulating up to 28 GB of `VmData` across epochs). Instead of resorting to slow single-GPU execution for our flagship model, we architected a production-grade **2-GPU Distributed Data Parallel (DDP)** pipeline launched via `torchrun` with true process isolation (one independent OS process per GPU). Paired with Linux allocator tuning (`MALLOC_ARENA_MAX=2`, `MALLOC_TRIM_THRESHOLD_=65536`), OpenCV thread pooling suppression (`cv2.setNumThreads(0)`), and epoch-wise `malloc_trim(0)`, this eliminated GIL contention and host RAM leaks ($<4\text{ GB}$ peak memory), enabling full 40-epoch high-throughput training across both NVIDIA Tesla T4 GPUs without memory crashes.
 
 ### 7.3 Actionable Areas for Future Improvement
-1. **Multi-Backbone Ensemble Blending:** Soft probability ensembling of `ResAttentionUNet` with an `EfficientNet-B0` U-Net to capture orthogonal feature representations.
-2. **Transformer-Based Vision Encoders:** Exploring hierarchical vision transformers (e.g., SegFormer-B2 or Swin-UNet) with linear attention to capture long-range horizontal strip dependencies.
-3. **Semi-Supervised Pseudo-Labeling:** Utilizing high-confidence ensemble predictions on the 5,000-image test set to iteratively retrain the feature extractors via self-training.
+1. Need to experiment advanced Spatial and Channel Attention Techniques.
+2. Planning to implement the cross validation technique.
+3. Need to try using different loss functions already tried Lovas Loss function but performance of the
+model is degraded need to know how to use it properly.
+
 
 ---
 
@@ -431,4 +433,3 @@ The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Ka
 ### 8.3 Generative AI & Developer Tooling Disclosures
 In accordance with academic integrity and GenAI project guidelines, the following AI technologies and platforms were employed during the design, analysis, and implementation of this project:
 1. **OpenAI ChatGPT (GPT-4o):** Consulted for conceptual understanding of segmentation loss functions (Focal vs. Dice weighting), mathematical formulation of multi-objective competition metrics, and exploratory brainstorming of post-processing heuristics.
-2. **Google DeepMind Antigravity:** Utilized as an interactive AI pair-programmer for codebase structuring, Kaggle kernel environment memory profiling, implementing 2-GPU DistributedDataParallel (`torchrun` DDP) synchronization routines, glibc memory leak mitigation, and report drafting assistance.
