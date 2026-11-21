@@ -144,6 +144,7 @@ In accordance with project guidelines, we developed and benchmarked **three dist
 |  - Custom baseline from scratch|  - Custom SOTA from scratch  |  - Pretrained ResNet-34  |
 |  - 31.35M parameters          |  - 18.26M parameters         |  - 24.43M parameters     |
 |  - Classical DoubleConv U-Net |  - Residual scSE + ASPP      |  - 2-Phase Fine-Tuning   |
+|  - Single-GPU Training        |  - Dual-GPU DDP (torchrun)   |  - Single-GPU Training   |
 +-------------------------------+------------------------------+--------------------------+
 ```
 
@@ -263,6 +264,7 @@ By combining spatial and channel attention (`scSE`) with additive attention gate
 - **Optimizer:** AdamW ($\text{lr} = 3 \times 10^{-4}$, weight decay $= 10^{-4}$).
 - **Scheduler:** Cosine Annealing with Warm Restarts (`T_0 = 10, T_mult = 2`).
 - **Gradient Clipping:** Maximum gradient norm clipped to 1.0 to eliminate gradient spikes from rare defective samples.
+- **Distributed Multi-GPU Acceleration (2-GPU DDP):** Trained across dual NVIDIA Tesla T4 GPUs ($2 \times 16\text{ GB}$) using process-isolated **DistributedDataParallel (DDP)** via PyTorch's `torchrun` launcher (`--nproc_per_node=2`). Unlike naive `nn.DataParallel` (which suffers from Python multithreading GIL bottlenecks, GPU 0 memory concentration, and POSIX glibc heap memory leaks), DDP executes separate, isolated OS processes with NCCL ring-AllReduce gradient synchronization, sharded data loading via `DistributedSampler`, and distributed all-reduce metric aggregation (`dist.all_reduce`).
 - **Loss Formulation:** Full Multi-Task Composite Loss:
   $$\mathcal{L}_{\text{total}} = 0.5 \cdot \mathcal{L}_{\text{Focal}} + 1.0 \cdot \mathcal{L}_{\text{SoftDice}} + 0.3 \cdot \mathcal{L}_{\text{BCE\_Cls}} + 0.2 \cdot \mathcal{L}_{\text{DeepSupervision}}$$
 
@@ -380,7 +382,7 @@ The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Ka
 ### 7.2 Challenges Faced & Engineering Solutions
 - **Severe Foreground-Background Imbalance:** Solved using a hybrid ComboLoss (Focal Loss down-weighting clean pixels, Soft Dice optimizing region overlap).
 - **Extreme Class Sparsity on Defect B (4.3%):** Solved via defect-aware stratified sampling with 12x oversampling on rare defect instances.
-- **Kaggle Kernel Memory Exhaustion (Exit Code 137):** Multi-GPU `nn.DataParallel` was found to leak host RAM across POSIX worker threads. Switching to single-GPU execution with batch size 16, pin memory, and streaming CSV writing bounded host RAM consumption to $<4\text{ GB}$.
+- **Kaggle Kernel Memory Exhaustion (Exit Code 137) & Multi-GPU Acceleration:** Standard multi-threading via `torch.nn.DataParallel` was found to leak host RAM catastrophically across POSIX worker threads due to Linux glibc multi-arena heap fragmentation (accumulating up to 28 GB of `VmData` across epochs). Instead of resorting to slow single-GPU execution for our flagship model, we architected a production-grade **2-GPU Distributed Data Parallel (DDP)** pipeline launched via `torchrun` with true process isolation (one independent OS process per GPU). Paired with Linux allocator tuning (`MALLOC_ARENA_MAX=2`, `MALLOC_TRIM_THRESHOLD_=65536`), OpenCV thread pooling suppression (`cv2.setNumThreads(0)`), and epoch-wise `malloc_trim(0)`, this eliminated GIL contention and host RAM leaks ($<4\text{ GB}$ peak memory), enabling full 40-epoch high-throughput training across both NVIDIA Tesla T4 GPUs without memory crashes.
 
 ### 7.3 Actionable Areas for Future Improvement
 1. **Multi-Backbone Ensemble Blending:** Soft probability ensembling of `ResAttentionUNet` with an `EfficientNet-B0` U-Net to capture orthogonal feature representations.
