@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+<rect width="980" height="520" fill="#ffffff" />
+<rect x="90" y="75" width="630" height="370" fill="#f8fafc" rx="4" />
+<text x="405.0" y="32" text-anchor="middle" font-size="18" font-weight="bold" fill="#0f172a">W&B Validation Foreground Dice Progression</text>
+<text x="405.0" y="52" text-anchor="middle" font-size="12" fill="#64748b">Mean Foreground Dice on Ground-Truth Defect Pixels Across Classes</text>
+<line x1="90" y1="445.0" x2="720" y2="445.0" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="449.0" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.10</text>
+<line x1="90" y1="383.3333333333333" x2="720" y2="383.3333333333333" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="387.3333333333333" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.20</text>
+<line x1="90" y1="321.6666666666667" x2="720" y2="321.6666666666667" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="325.6666666666667" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.29</text>
+<line x1="90" y1="260.0" x2="720" y2="260.0" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="264.0" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.39</text>
+<line x1="90" y1="198.33333333333334" x2="720" y2="198.33333333333334" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="202.33333333333334" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.49</text>
+<line x1="90" y1="136.66666666666663" x2="720" y2="136.66666666666663" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="140.66666666666663" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.58</text>
+<line x1="90" y1="75.0" x2="720" y2="75.0" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="78" y="79.0" text-anchor="end" font-size="11" font-weight="500" fill="#64748b">0.68</text>
+<line x1="90.0" y1="75" x2="90.0" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="90.0" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 1</text>
+<line x1="154.6153846153846" y1="75" x2="154.6153846153846" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="154.6153846153846" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 5</text>
+<line x1="235.3846153846154" y1="75" x2="235.3846153846154" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="235.3846153846154" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 10</text>
+<line x1="316.1538461538462" y1="75" x2="316.1538461538462" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="316.1538461538462" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 15</text>
+<line x1="396.9230769230769" y1="75" x2="396.9230769230769" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="396.9230769230769" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 20</text>
+<line x1="477.69230769230774" y1="75" x2="477.69230769230774" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="477.69230769230774" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 25</text>
+<line x1="558.4615384615385" y1="75" x2="558.4615384615385" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="558.4615384615385" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 30</text>
+<line x1="639.2307692307693" y1="75" x2="639.2307692307693" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="639.2307692307693" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 35</text>
+<line x1="720.0" y1="75" x2="720.0" y2="445" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+<text x="720.0" y="467" text-anchor="middle" font-size="11" font-weight="500" fill="#64748b">Epoch 40</text>
+<rect x="90" y="75" width="630" height="370" fill="none" stroke="#cbd5e1" stroke-width="1.5" />
+<text x="405.0" y="500" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">Training Epoch</text>
+<text transform="rotate(-90)" x="-260.0" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">Foreground Dice Score (0.0 to 1.0)</text>
+<polyline fill="none" stroke="#16a34a" stroke-width="2.8"  points="90.0,402.3 106.2,281.2 122.3,300.1 138.5,226.3 154.6,195.0 170.8,172.2 186.9,161.5 203.1,158.0 219.2,152.4 235.4,138.1 251.5,151.2 267.7,176.3 283.8,160.4 300.0,129.1 316.2,151.3 332.3,152.1 348.5,134.4 364.6,130.5 380.8,155.1 396.9,136.3 413.1,126.8 429.2,131.1 445.4,122.7 461.5,121.2 477.7,127.9 493.8,130.2 510.0,131.3 526.2,119.4 542.3,123.1 558.5,116.7 574.6,124.6 590.8,116.6 606.9,120.4 623.1,124.3 639.2,120.0 655.4,122.2 671.5,120.0 687.7,118.4 703.8,118.4 720.0,120.0" />
+<circle cx="90.0" cy="402.3" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="170.8" cy="172.2" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="251.5" cy="151.2" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="332.3" cy="152.1" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="413.1" cy="126.8" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="493.8" cy="130.2" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="574.6" cy="124.6" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="655.4" cy="122.2" r="3.5" fill="#16a34a" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="79" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="91" x2="774" y2="91" stroke="#16a34a" stroke-width="2.6"  />
+<text x="782" y="95" font-size="11" font-weight="500" fill="#1e293b">ResAttentionUNet (DDP)</text>
+<polyline fill="none" stroke="#dc2626" stroke-width="2.8"  points="90.0,267.6 106.2,230.9 122.3,197.2 138.5,184.8 154.6,182.7 170.8,176.7 186.9,169.2 203.1,166.6 219.2,165.6 235.4,164.7 251.5,168.6 267.7,159.1 283.8,157.6 300.0,159.4 316.2,159.0" />
+<circle cx="90.0" cy="267.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="106.2" cy="230.9" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="122.3" cy="197.2" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="138.5" cy="184.8" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="154.6" cy="182.7" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="170.8" cy="176.7" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="186.9" cy="169.2" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="203.1" cy="166.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="219.2" cy="165.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="235.4" cy="164.7" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="251.5" cy="168.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="267.7" cy="159.1" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="283.8" cy="157.6" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="300.0" cy="159.4" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="316.2" cy="159.0" r="3.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="109" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="121" x2="774" y2="121" stroke="#dc2626" stroke-width="2.6"  />
+<text x="782" y="125" font-size="11" font-weight="500" fill="#1e293b">PretrainedResNet34 (2-Phase)</text>
+<polyline fill="none" stroke="#2563eb" stroke-width="2.8"  points="90.0,403.3 106.2,299.3 122.3,269.3 138.5,275.7 154.6,236.9 170.8,214.9 186.9,207.2 203.1,201.9 219.2,190.7 235.4,168.4 251.5,162.7 267.7,173.0 283.8,162.4 300.0,163.3 316.2,179.2 332.3,143.4 348.5,152.2 364.6,144.8 380.8,150.5 396.9,159.5 413.1,140.9 429.2,144.2 445.4,138.2 461.5,133.9 477.7,130.6 493.8,135.3 510.0,131.2 526.2,139.8 542.3,132.1 558.5,132.4" />
+<circle cx="90.0" cy="403.3" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="138.5" cy="275.7" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="186.9" cy="207.2" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="235.4" cy="168.4" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="283.8" cy="162.4" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="332.3" cy="143.4" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="380.8" cy="150.5" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="429.2" cy="144.2" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="477.7" cy="130.6" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="526.2" cy="139.8" r="3.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+<rect x="736" y="139" width="236" height="24" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+<line x1="744" y1="151" x2="774" y2="151" stroke="#2563eb" stroke-width="2.6"  />
+<text x="782" y="155" font-size="11" font-weight="500" fill="#1e293b">ScratchUNet (Baseline)</text>
+</svg>
