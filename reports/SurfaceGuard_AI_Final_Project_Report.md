@@ -391,8 +391,9 @@ The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Ka
 
 ---
 
-## 8. References
+## 8. References & Disclosures
 
+### 8.1 Academic Literature & Foundational Papers
 1. **Ronneberger, O., Fischer, P., & Brox, T. (2015).** *U-Net: Convolutional Networks for Biomedical Image Segmentation.* Medical Image Computing and Computer-Assisted Intervention (MICCAI), Springer, pp. 234–241.
 2. **He, K., Zhang, X., Ren, S., & Sun, J. (2016).** *Deep Residual Learning for Image Recognition.* IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pp. 770–778.
 3. **Roy, A. G., Navab, N., & Wachinger, C. (2018).** *Concurrent Spatial and Channel ‘Squeeze & Excitation’ in Fully Convolutional Networks.* International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI), pp. 421–429.
@@ -401,3 +402,13 @@ The performance jump of `ResAttentionUNet` from $0.62410$ to **$0.65905$** on Ka
 6. **Lin, T. Y., Goyal, P., Girshick, R., He, K., & Dollár, P. (2017).** *Focal Loss for Dense Object Detection.* IEEE International Conference on Computer Vision (ICCV), pp. 2980–2988.
 7. **Paszke, A., et al. (2019).** *PyTorch: An Imperative Style, High-Performance Deep Learning Library.* Advances in Neural Information Processing Systems (NeurIPS 32), pp. 8024–8035.
 8. **Biewald, L. (2020).** *Experiment Tracking with Weights and Biases.* Software available from wandb.ai.
+
+### 8.2 Educational Resources & Technical Video References
+1. **TileStats (2023).** *Attention Neural Networks: Boosting CNNs with SE and CBAM Attention.* YouTube Video Tutorial. Available at: [https://www.youtube.com/watch?v=cw38aJuQBHM](https://www.youtube.com/watch?v=cw38aJuQBHM) (Referenced for conceptual design of spatial and channel attention mechanisms and implementation of scSE blocks).
+2. **TileStats (2023).** *U-Net clearly explained | Image Segmentation with AI.* YouTube Video Tutorial. Available at: [https://www.youtube.com/watch?v=oxcgx75k6yU](https://www.youtube.com/watch?v=oxcgx75k6yU) (Referenced for encoder-decoder architectural principles, skip connection flow, and intersection-over-union/Dice loss dynamics).
+3. **TileStats Channel.** *Computer Vision and Statistical Concepts in Deep Learning.* YouTube Channel: [@tilestats](https://www.youtube.com/@tilestats). Available at: [https://www.youtube.com/@tilestats](https://www.youtube.com/@tilestats) (Referenced for foundational concepts in convolutional neural networks, segmentation evaluation metrics, and hyperparameter intuition).
+
+### 8.3 Generative AI & Developer Tooling Disclosures
+In accordance with academic integrity and GenAI project guidelines, the following AI technologies and platforms were employed during the design, analysis, and implementation of this project:
+1. **OpenAI ChatGPT (GPT-4o):** Consulted for conceptual understanding of segmentation loss functions (Focal vs. Dice weighting), mathematical formulation of multi-objective competition metrics, and exploratory brainstorming of post-processing heuristics.
+2. **Google DeepMind Antigravity:** Utilized as an interactive AI pair-programmer for codebase structuring, Kaggle kernel environment memory profiling, implementing 2-GPU DistributedDataParallel (`torchrun` DDP) synchronization routines, glibc memory leak mitigation, and report drafting assistance.
